@@ -1,0 +1,71 @@
+# Installed dependencies and npm cache
+node_modules/
+.npm/
+
+# Generated npm archives and build output
+*.tgz
+/dist/
+/build/
+
+# Local sample data and planning history used to develop the viewer
+/openspec/
+
+# Development-only verification and tooling
+/test/
+/scripts/
+/.github/
+
+# Local design records and release notes
+/DESIGN.md
+/PRODUCT.md
+/PUBLISHING.md
+/RELEASE-CHECKLIST.md
+
+# Superseded header design prototypes
+/public/header-options.html
+/public/header-options.css
+/public/header-options.js
+
+# Local viewer configuration, jobs, previews, feedback and backups
+.change-viewer/
+.openspec-ui/
+.spequi/
+
+# Generated agent integrations and local design tooling
+/.agents/
+/.claude/
+/.gigacode/
+/.codex/
+/.impeccable/
+
+# Local environment and authentication (keep shareable templates)
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+!.env.*.example
+/.npmrc
+
+# Logs, caches, test reports and temporary files
+*.log
+.cache/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+test-results/
+playwright-report/
+tmp/
+.tmp/
+*.tmp
+
+# OS and editor-local files
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*.swo
+*~
+
+test
+openspec

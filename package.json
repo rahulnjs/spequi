@@ -1,0 +1,72 @@
+{
+  "name": "spequi",
+  "version": "0.1.0",
+  "description": "A local workspace for planning, implementation previews, and OpenSpec code review",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rahulnjs/spequi.git"
+  },
+  "homepage": "https://github.com/rahulnjs/spequi#readme",
+  "bugs": {
+    "url": "https://github.com/rahulnjs/spequi/issues"
+  },
+  "keywords": [
+    "openspec",
+    "code-review",
+    "diff",
+    "specifications",
+    "htmx",
+    "agents"
+  ],
+  "type": "module",
+  "bin": {
+    "spequi": "bin/spequi.mjs"
+  },
+  "exports": {
+    ".": "./src/server.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "public/app.css",
+    "public/app.js",
+    "public/fonts.css",
+    "public/fonts/",
+    "public/diff.css",
+    "public/review.css",
+    "public/review.js",
+    "public/lifecycle.css",
+    "public/lifecycle.js",
+    "public/studio.css",
+    "public/studio.js",
+    "skills/",
+    "templates/",
+    "README.md",
+    "LICENSE",
+    "public/session.js",
+    "docs/agent-workflow.md"
+  ],
+  "scripts": {
+    "prepublishOnly": "npm run check",
+    "start": "node bin/spequi.mjs start",
+    "check": "node --check bin/spequi.mjs && node --check src/server.mjs && node --check src/project.mjs && node --check src/openspec-cli.mjs && node --check src/spec-context.mjs && node --check src/spec-context-view.mjs && node --check templates/cli.mjs && node --check public/app.js && node --check public/review.js && node --check public/lifecycle.js && node --check public/studio.js && node --check src/studio-view.mjs && node --check src/studio-plans.mjs && node --check src/studio-documents.mjs && node --check src/creation-view.mjs && node --check src/commands.mjs && node --check src/agent-session.mjs && node --check public/session.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3",
+    "diff": "^8.0.2",
+    "hast-util-from-html": "~2.0.3",
+    "hast-util-sanitize": "^5.0.2",
+    "hast-util-to-html": "^9.0.6",
+    "htmx.org": "2.0.11",
+    "marked": "^17.0.1",
+    "shiki": "^4.6.0",
+    "ws": "^8.18.3"
+  }
+}
