@@ -1,3 +1,4 @@
+import { writeJob } from './jobs.mjs';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
@@ -136,7 +137,7 @@ export async function directPreview(root, { change, kind, patch, analysisId, fil
       validation: { status: 'not-run', message: 'No implementation checks were run. Review and test these proposed edits before applying.' },
       ...(analysis ? { analysisId: analysis.id, model: config.model } : {}), logs: [{ at: now, message: kind === 'model' ? 'Generating proposed edits using the selected model context.' : 'Staging an imported patch in an isolated copy.' }] };
     const jobFile = await within(root, `.spequi/jobs/${id}.json`);
-    await writeJSON(jobFile, job);
+    await writeJob(root, job);
     try {
       const work = await createPreview(root, id);
       let edits;
@@ -156,12 +157,12 @@ export async function directPreview(root, { change, kind, patch, analysisId, fil
       job.result = result.changes.length ? 'Proposed edits are ready for review. Implementation checks have not been run.' : 'No file changes were produced.';
       job.updatedAt = new Date().toISOString();
       job.logs.push({ at: job.updatedAt, message: job.result });
-      await writeJSON(jobFile, job);
+      await writeJob(root, job);
       return { job, result };
     } catch (error) {
       job.status = 'failed'; job.result = error.message; job.updatedAt = new Date().toISOString();
       job.logs.push({ at: job.updatedAt, message: error.message });
-      await writeJSON(jobFile, job);
+      await writeJob(root, job);
       throw error;
     }
   });

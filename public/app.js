@@ -12,13 +12,33 @@
     applyTheme(document.documentElement.dataset.theme === 'dark' ? 'enterprise' : 'dark');
     try { localStorage.setItem('spequi-theme', document.documentElement.dataset.theme); } catch {}
   });
-  let pendingRefresh = false, refreshing = false, followUpRefresh = false;
+  let pendingRefresh = false, refreshing = false, followUpRefresh = false, navigationRequests = 0, navigationGeneration = 0, backgroundXHR = null;
   const drafts = {};
   const specDisclosures = new Map();
   const sourceDrafts = new Map(), sourcePending = new Set(), sourceMessages = new Map();
   const initialDetailsToggle = document.getElementById('toggle-review-details');
   let reviewDetailsOpen = initialDetailsToggle ? initialDetailsToggle.getAttribute('aria-expanded') === 'true' : undefined, preserveReader = null;
-  function toast(message) { const node = document.getElementById('toast'); node.textContent = message; node.classList.add('visible'); clearTimeout(node.hideTimer); node.hideTimer = setTimeout(() => node.classList.remove('visible'), 4500); }
+  function toast(message, downloadUrl = '') {
+    const node = document.getElementById('toast'); if (!node) return;
+    node.textContent = message;
+    if (/^\/api\/reviews\/[a-zA-Z0-9_-]+\/feedback\/[a-zA-Z0-9_-]+$/.test(downloadUrl)) {
+      const link = document.createElement('a'); link.href = downloadUrl; link.download = 'openspec-review-feedback.md'; link.textContent = 'Download Markdown'; node.append(link);
+    }
+    node.classList.add('visible'); clearTimeout(node.hideTimer);
+    const dismiss = () => { node.hideTimer = setTimeout(() => node.classList.remove('visible'), downloadUrl ? 9000 : 4500); };
+    node.onpointerenter = node.onfocusin = () => clearTimeout(node.hideTimer);
+    node.onpointerleave = node.onfocusout = dismiss; dismiss();
+  }
+  document.addEventListener('spequi-toast', event => {
+    const { message, downloadUrl = '', persist = false } = event.detail || {};
+    if (typeof message !== 'string' || !message) return;
+    if (persist) try { sessionStorage.setItem('spequi-toast', JSON.stringify({ message, at: Date.now() })); } catch {}
+    toast(message, downloadUrl);
+  });
+  try {
+    const saved = JSON.parse(sessionStorage.getItem('spequi-toast')); sessionStorage.removeItem('spequi-toast');
+    if (saved && typeof saved.message === 'string' && Date.now() - saved.at < 10000) toast(saved.message);
+  } catch {}
   function remember() {
     for (const node of document.querySelectorAll('.spec-context-quote[id]')) specDisclosures.set(node.id, node.open);
     for (const name of ['instructions', 'workflow-action', 'file-filter']) { const input = document.getElementById(name); if (input) drafts[name] = input.value; }
@@ -41,10 +61,10 @@
   }
   function readingViewport() { return document.querySelector('.diff-code-scroll') || document.querySelector('.reader'); }
   function refresh() {
-    if (sourcePending.size) { pendingRefresh = true; return; }
+    if (sourcePending.size || navigationRequests) { pendingRefresh = true; return; }
     if (refreshing) { pendingRefresh = true; followUpRefresh = true; return; }
     if (!window.htmx) { pendingRefresh = true; return; }
-    if (document.activeElement?.matches('input,textarea,select') || document.getElementById('apply-dialog').open) { pendingRefresh = true; return; }
+    if (document.activeElement?.matches('input,textarea,select') || document.getElementById('apply-dialog')?.open || document.querySelector('dialog[open]')) { pendingRefresh = true; return; }
     refreshing = true; pendingRefresh = false; remember();
     const reader = readingViewport(), top = reader?.scrollTop || 0, left = reader?.scrollLeft || 0;
     const disclosures = [...document.querySelectorAll('#workspace details[id]')].filter(node => node.id !== 'review-comment-composer').map(node => ({ id: node.id, open: node.hasAttribute('open') }));
@@ -54,22 +74,41 @@
     const focusDetails = focused?.matches('summary') ? focused.closest('details')?.id : null;
     const menuOpen = document.getElementById('workspace').classList.contains('navigation-open');
     const refreshURL = document.getElementById('workspace').dataset.refreshUrl || location.pathname + location.search;
-    window.htmx.ajax('GET', refreshURL, { target: '#workspace', swap: 'outerHTML' }).then(() => {
+    const generation = navigationGeneration;
+    window.htmx.ajax('GET', refreshURL, { target: '#workspace', swap: 'outerHTML', headers: { 'X-Spequi-Refresh': '1' } }).then(() => {
+      if (generation !== navigationGeneration) return;
       restore(); const updated = readingViewport(); if (updated) { updated.scrollTop = top; updated.scrollLeft = left; }
-      for (const state of disclosures) { const node = document.getElementById(state.id); if (node) node.toggleAttribute('open', state.open || node.hasAttribute('data-lifecycle-waiting') || node.hasAttribute('data-lifecycle-failed')); }
+      for (const state of disclosures) { const node = document.getElementById(state.id); if (node) node.toggleAttribute('open', state.open); }
       if (menuOpen) { document.getElementById('workspace').classList.add('navigation-open'); document.querySelector('.mobile-menu')?.setAttribute('aria-expanded', 'true'); }
       const target = focusID ? document.getElementById(focusID) : focusHref ? [...document.querySelectorAll('#workspace a')].find(node => node.getAttribute('href') === focusHref) : focusDetails ? document.getElementById(focusDetails)?.querySelector('summary') : null;
       if (target && !target.disabled) target.focus({ preventScroll: true });
       else if (focused?.closest('#workspace')) document.getElementById('document')?.focus({ preventScroll: true });
-    }).catch(() => { pendingRefresh = true; }).finally(() => {
+    }).catch(() => { if (generation === navigationGeneration) pendingRefresh = true; }).finally(() => {
       refreshing = false;
       if (followUpRefresh) { followUpRefresh = false; setTimeout(refresh, 100); }
     });
   }
   document.addEventListener('htmx:configRequest', event => { event.detail.headers['X-CSRF-Token'] = document.querySelector('meta[name="csrf-token"]').content; });
   document.addEventListener('htmx:beforeRequest', event => {
+    const xhr = event.detail?.xhr;
+    if (event.detail?.requestConfig?.headers?.['X-Spequi-Refresh'] === '1' && xhr) {
+      xhr.spequiGeneration = navigationGeneration; backgroundXHR = xhr;
+    } else if (event.detail?.target?.id === 'workspace' && event.detail?.elt?.matches('a,form,input')) {
+      navigationGeneration++; navigationRequests++;
+      if (xhr) xhr.spequiNavigation = true;
+      backgroundXHR?.abort(); backgroundXHR = null;
+    }
     remember();
     if (event.detail.elt?.closest('[data-preserve-reader]')) { const reader = readingViewport(); preserveReader = reader ? { top: reader.scrollTop, left: reader.scrollLeft } : null; }
+  });
+  document.addEventListener('htmx:afterRequest', event => {
+    if (!event.detail?.xhr?.spequiNavigation) return;
+    navigationRequests = Math.max(0, navigationRequests - 1);
+    if (!navigationRequests && pendingRefresh) setTimeout(refresh, 100);
+  });
+  document.addEventListener('htmx:beforeSwap', event => {
+    const generation = event.detail?.xhr?.spequiGeneration;
+    if (generation !== undefined && generation !== navigationGeneration) event.detail.shouldSwap = false;
   });
   document.addEventListener('htmx:afterSwap', () => {
     restore(); initializeDiff();
@@ -187,20 +226,24 @@
     dialog.addEventListener('close', () => { if (dialog.returnValue === 'confirm') { form.dataset.confirmed = 'true'; form.requestSubmit(); } }, { once: true });
   }, true);
   let retry = 1000, hasConnected = false;
+  let agentRequest;
   async function updateAgent() {
+    if (agentRequest) return agentRequest;
+    agentRequest = (async () => {
     try {
-      const response = await fetch('/api/agent-status');
-      if (!response.ok) return;
+      const response = await fetch('/api/agent-status', { signal: globalThis.AbortSignal?.timeout?.(10000) });
+      if (!response.ok) return null;
       const agent = await response.json(); document.dispatchEvent(new window.CustomEvent('agent-status', {detail:agent})); const node = document.querySelector('.agent-state');
       if (node) { node.classList.toggle('online', agent.connected); node.querySelector('span').textContent = agent.connected ? agent.agent || 'Agent attached' : 'Waiting for your agent'; }
-      for (const note of document.querySelectorAll('[data-lifecycle-agent-note]')) {
-        note.textContent = agent.connected ? `${agent.agent || 'Agent'} is attached. Ready to update the spec and preview code.` : agent.status === 'unresponsive' ? 'Agent heartbeat stopped. Resume the spequi skill in the same coding session. Open the agent indicator for recovery steps.' : 'No agent attached. Run the spequi skill in your coding agent to process requests.';
-        note.hidden = Boolean(agent.connected) || note.closest('[data-awaiting-input=true]') !== null;
-      }
-      for (const form of document.querySelectorAll('[data-studio-stalled-action]')) form.hidden = Boolean(agent.connected);
+
+      for (const form of document.querySelectorAll('[data-studio-stalled-action]')) form.hidden = agent.queue?.active?.id === form.dataset.requestOwner ? Boolean(agent.queue.active.ownerConnected) : Boolean(agent.connected);
       for (const caption of document.querySelectorAll('[data-lifecycle-agent-caption]')) caption.textContent = agent.connected ? 'Same agent session' : 'Requests wait until your agent is attached';
-    } catch {}
+      return agent;
+    } catch { return null; }
+    })();
+    try { return await agentRequest; } finally { agentRequest = null; }
   }
+  window.spequiRefreshAgent = updateAgent;
   function connect() {
     const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/live`);
     const status = document.getElementById('connection');
@@ -209,7 +252,7 @@
       if (hasConnected) { pendingRefresh = true; refresh(); }
       hasConnected = true;
     });
-    socket.addEventListener('message', event => { try { const message = JSON.parse(event.data); if (message.type === 'changed') refresh(); if (['agent', 'heartbeat', 'connected'].includes(message.type)) updateAgent(); } catch {} });
+    socket.addEventListener('message', event => { try { const message = JSON.parse(event.data); if (message.type === 'changed' && (!message.change || message.change === document.getElementById('workspace')?.dataset.change)) refresh(); if (message.type === 'requests') document.dispatchEvent(new window.CustomEvent('requests-updated')); if (message.type === 'readiness' && message.change === document.getElementById('workspace')?.dataset.change) refresh(); if (['agent', 'heartbeat', 'connected'].includes(message.type)) updateAgent(); } catch {} });
     socket.addEventListener('close', () => { status.textContent = 'Reconnecting to server'; status.classList.remove('online'); setTimeout(connect, retry); retry = Math.min(retry * 2, 15000); });
     socket.addEventListener('error', () => socket.close());
   }

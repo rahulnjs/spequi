@@ -1,4 +1,5 @@
 (() => {
+  const identities = new Map();
   const drafts = new Map(), feedback = new Map(), busy = new Set();
   const scope = () => document.getElementById('workspace')?.dataset.change || 'project';
   const key = form => `${scope()}:${form.id}`;
@@ -6,9 +7,19 @@
     drafts.set(key(form), [...form.querySelectorAll('textarea,input:not([type=hidden])')].map(input => ({ name: input.name, value: input.value, checked: input.checked, type: input.type })));
   }
   function show(form, text, error = false, id = key(form)) {
+    if (error && form.hasAttribute('data-create-spec')) {
+      clearFeedback(form, id);
+      document.dispatchEvent(new window.CustomEvent('spequi-toast', { detail: { message: text } }));
+      return;
+    }
     feedback.set(id, { text, error });
     const node = form.closest('.studio-footer')?.querySelector('#studio-action-feedback') || form.querySelector('[data-lifecycle-feedback]');
     if (node) { node.textContent = text; node.className = error ? 'error-message' : 'success-message'; }
+  }
+  function clearFeedback(form, id) {
+    feedback.delete(id);
+    const node = form.closest('.studio-footer')?.querySelector('#studio-action-feedback') || form.querySelector('[data-lifecycle-feedback]');
+    if (node) { node.textContent = ''; node.className = ''; }
   }
   function restore() {
     for (const form of document.querySelectorAll('[data-lifecycle-form]')) {
@@ -45,24 +56,33 @@
     remember(form); busy.add(id); form.setAttribute('aria-busy', 'true');
     const buttons = [...form.querySelectorAll('button[type=submit]'), ...document.querySelectorAll(`button[type=submit][form="${form.id}"]`)].map(button => ({ button, disabled: button.disabled }));
     for (const { button } of buttons) button.disabled = true;
-    show(form, 'Working…');
+    clearFeedback(form, id);
     try {
+      if (form.hasAttribute('data-create-spec')) {
+        if (window.spequiSaveDraft) await window.spequiSaveDraft(form);
+        form.dataset.draftSubmitting = 'true';
+      }
+      if (endpoint === '/api/lifecycle/actions' || endpoint === '/api/lifecycle/command') {
+        const signature = JSON.stringify(payload), previous = identities.get(id);
+        const identity = previous?.signature === signature ? previous : { signature, value: window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}` };
+        identities.set(id, identity); payload.requestKey = identity.value;
+      }
       const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]')?.content || '' }, body: JSON.stringify(payload) });
       if (response.status === 403) throw new Error('Local session verification failed. Reload the viewer and retry.');
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'The workflow could not run. Refresh readiness and retry.');
       const message = result.summary || (result.job ? 'Queued for your attached agent.' : result.validation ? (result.validation.valid ? 'Specification validation passed.' : 'Validation found issues. See Spec validation below.') : result.cancelled ? 'Workflow cancelled.' : payload.questionId ? 'Answer saved. The same agent session can resume.' : 'Readiness refreshed.');
-      show(form, message, false, id);
       if (result.job) {
-        feedback.delete(id);
-        const notice = form.closest('.studio-footer')?.querySelector('#studio-action-feedback') || form.querySelector('[data-lifecycle-feedback]');
-        if (notice) { notice.textContent = ''; notice.className = ''; }
-      }
-      if (result.job || payload.questionId) drafts.delete(id);
+        if (form.hasAttribute('data-create-spec')) form.dataset.draftSubmitted = result.job.id;
+        clearFeedback(form, id);
+        const persist = Boolean(result.url && workspace === document.getElementById('workspace') && result.job.change !== workspace?.dataset.change);
+        document.dispatchEvent(new window.CustomEvent('spequi-toast', { detail: { message, persist } }));
+      } else show(form, message, false, id);
+      if (result.job || payload.questionId) { drafts.delete(id); identities.delete(id); }
       // Do not redirect a response belonging to a page the user has already left.
       if (result.url && workspace === document.getElementById('workspace')) {
         const isCurrentChange = result.job?.change && result.job.change === workspace.dataset.change;
-        if (!isCurrentChange) { location.assign(form.closest('[data-studio]') ? result.url.replace('view=lifecycle', 'view=studio') : result.url); return; }
+        if (!isCurrentChange) { location.assign(result.url); return; }
         for (const input of form.querySelectorAll('textarea')) input.value = '';
       }
       if (workspace === document.getElementById('workspace')) {
@@ -70,8 +90,9 @@
         document.dispatchEvent(new window.CustomEvent('workspace-updated'));
       }
     } catch (error) {
-      show(form, error.message || 'Could not connect to the local viewer. Retry when it is running.', true, id);
+      if (!error.draftNotification) show(form, error.message || 'Could not connect to the local viewer. Retry when it is running.', true, id);
     } finally {
+      delete form.dataset.draftSubmitting;
       busy.delete(id); form.removeAttribute('aria-busy');
       for (const { button, disabled } of buttons) button.disabled = disabled;
       for (const current of document.querySelectorAll('[data-lifecycle-form]')) if (key(current) === id) {

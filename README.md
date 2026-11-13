@@ -10,33 +10,30 @@ A local workspace for planning, implementing, and reviewing [OpenSpec](https://o
 [![License: MIT](https://img.shields.io/badge/License-MIT-3f62b5)](LICENSE)
 [![No build step](https://img.shields.io/badge/Frontend-No_build_step-626f83)](#stack)
 
-[Get started](#get-started) · [Build and Review](#build-and-review) · [Features](#features) · [How it works](#how-it-works) · [Agent setup](#attach-your-agent)
+[Get started](#get-started) · [Planning and review](#planning-and-review) · [Features](#features) · [How it works](#how-it-works) · [Agent setup](#attach-your-agent)
 
 </div>
 
-## Build and Review
+## Planning and review
 
-The switch beside the logo offers two ways to work on the same change. Each label includes a description so you can choose by what you want to do:
+Start with **New spec** to shape an idea with your agent. Ideas save automatically under **Drafts** in the left panel; return there to resume unfinished planning or delete a draft. Draft deletion can also remove its generated planning files after confirmation.
 
-| Mode                           | Use it to                                                                                                                   |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| **Build — Plan & implement**   | Start a spec from an idea, revise the plan with your agent, preview and apply an implementation, then validate and archive. |
-| **Review — Inspect & comment** | Read planning documents, inspect actual code diffs and dependency impact, and leave precise feedback for the next revision. |
+Select an existing change to read documents, inspect proposed code, and leave feedback. Its **Build** tab provides spec refinement, implementation preview, validation, and archive. New specs and existing changes use the same planning workspace, retained previews, and conversation. Applying reviewed files always requires explicit confirmation.
 
-Start in **Build** to move an idea forward. Switch to **Review** when you want to inspect the plan or proposed files in detail. Both modes use the same saved changes, previews, and comments. Generating a preview never applies it automatically; applying reviewed files requires explicit confirmation.
+Open **Requests** in the header to inspect the queue and history, filter by status, cancel pending work, retry supported failed requests, or delete a finished request with its associated preview and review data. Active work stays visible while you browse another spec. Partially edited planning work must be reviewed before continuing.
 
-![Build mode showing a planning document beside the conversation, with Shape spec, Implement, and Validate & archive stages.](https://raw.githubusercontent.com/rahulnjs/spequi/master/docs/screenshots/build-light.png)
+![An unfinished spec in Drafts, with its planning document beside the retained conversation.](https://raw.githubusercontent.com/rahulnjs/spequi/master/docs/screenshots/build-light.png)
 
-_Build: shape the spec beside your agent conversation._
+_New spec: shape the plan beside your agent conversation and resume it from Drafts._
 
 ![Spequi showing a highlighted implementation diff, an inline review comment, dependency impact, and review feedback.](https://raw.githubusercontent.com/rahulnjs/spequi/master/docs/screenshots/file-review-light.png)
 
 _Review: inspect a saved implementation and leave feedback. Screenshots use a local example project._
 
 <details>
-<summary>See both modes in dark theme</summary>
+<summary>See planning and review in dark theme</summary>
 
-![Build mode in dark theme.](https://raw.githubusercontent.com/rahulnjs/spequi/master/docs/screenshots/build-dark.png)
+![The draft planning flow in dark theme.](https://raw.githubusercontent.com/rahulnjs/spequi/master/docs/screenshots/build-dark.png)
 
 ![The same OpenSpec review workspace in dark mode.](https://raw.githubusercontent.com/rahulnjs/spequi/master/docs/screenshots/file-review-dark.png)
 
@@ -46,7 +43,7 @@ _Review: inspect a saved implementation and leave feedback. Screenshots use a lo
 
 |                              | What you can do                                                                                                                                                         |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Run the lifecycle**        | Switch to Build to revise the spec beside its conversation, preview and apply code, then validate and archive. Answer agent questions in the app.                       |
+| **Run the lifecycle**        | Create and resume drafts, or open an existing change’s Build workspace to refine the spec, preview and apply code, then validate and archive. Answer agent questions in the app.                       |
 | **Read the plan**            | Browse Proposal, Design, Tasks, active changes, archived changes, and specifications. Switch between rendered Markdown and source.                                      |
 | **Review real code**         | Compare the current project with an agent's isolated implementation. Use highlighted Unified or Split diffs, changed-word emphasis, context folding, and line wrapping. |
 | **Trace changes to the spec** | Read quoted requirements beside changed code blocks, with source lines from the preview’s saved plan. Agent links and suggested file context are labelled separately. |
@@ -59,7 +56,7 @@ _Review: inspect a saved implementation and leave feedback. Screenshots use a lo
 
 Requires **Node.js 20+**, npm, and a target project containing OpenSpec files.
 
-For the full Build workflow, also install the OpenSpec CLI and make the required OpenSpec workflow skills available to your coding agent, then attach it with the `spequi` skill. Initializing this package installs the UI skill and command wrappers; OpenSpec setup and its workflow skills are separate. Browsing, review, offline affected-file analysis, and patch import work without an attached agent.
+For agent-driven planning and implementation, also install the OpenSpec CLI and make the required OpenSpec workflow skills available to your coding agent, then attach it with the `spequi` skill. Initializing this package installs the UI skill and command wrappers; OpenSpec setup and its workflow skills are separate. Browsing, review, offline affected-file analysis, and patch import work without an attached agent.
 
 The current OpenSpec CLI [requires Node.js 22.12+](https://github.com/Fission-AI/OpenSpec/blob/main/package.json), independently of this UI’s Node.js 20 minimum. Use Node.js 22.12+ for the complete setup with current OpenSpec.
 
@@ -102,6 +99,9 @@ Open the printed URL, normally **http://127.0.0.1:4310**. To choose another port
 Point the viewer at your own project. This repository keeps its runtime source and README screenshots; it does not ship sample OpenSpec plans. An empty project shows setup guidance. Initialize OpenSpec separately when needed.
 
 ## Attach your agent
+
+GigaCode uses monitored Shell calls with `is_background: true` for the server and five-minute `agent wait` calls. Waiting does not claim a job; the agent claims it in the foreground after receiving the result. Background completion must resume the host session for unattended idle attachment to work. The skill includes a check and a foreground fallback. Closing the coding agent pauses consumption and leaves requests saved.
+
 
 The viewer uses **your existing coding agent**. It does not launch a model or require a separate provider API key.
 
@@ -159,27 +159,27 @@ GigaCode registration follows its documented [skill discovery](https://gitverse.
 
 Repeat initialization preserves Spequi configuration, comments, previews, application files, and custom launchers. An explicit reinitialization refreshes managed launchers and agent registration. If the original cached package disappears, the launcher can retrieve the initialized version through npm; registry access is needed for that recovery.
 
-## Build workflow
+## Planning workflow
 
 ### Start a spec from an idea
 
-Choose **New spec** in the left panel. Describe the idea and give it an unused lowercase change name. **Start with the next artifact** is the default; **Generate the full plan** requests all required planning artifacts. Continue queues one owned planning request for the attached agent. Its questions stay in the app, replies survive reloads, and the generated change opens in Build when the request completes. Partial plans offer the next schema-ready artifact; planning never automatically starts implementation.
+Choose **New spec** in the left panel. Describe the idea and give it an unused lowercase change name. **Start with the next artifact** is the default; **Generate the full plan** requests all required planning artifacts. Continue queues one owned planning request for the attached agent. Its questions stay in the app, replies survive reloads, and the generated change opens in its draft planning workspace when the request completes. Partial plans offer the next schema-ready artifact; planning never automatically starts implementation.
 
-The **Commands** picker in Build and slash commands use the same guarded operations. Supported commands are `/new`, `/explore <question>`, `/continue`, `/propose`, `/update <revision>`, `/apply`, `/status`, `/validate`, `/verify`, `/sync`, and `/archive`. `/opsx:<name>` and `/opsx-<name>` aliases also work inside the app. These are app commands, independent of the host's slash-command installation. `/apply` generates an isolated implementation preview; writing reviewed files still requires the separate Apply confirmation. Status and validation use the installed local OpenSpec CLI. Other commands wait for the existing agent session.
+The **Commands** picker in the planning workspace and slash commands use the same guarded operations. Supported commands are `/new`, `/explore <question>`, `/continue`, `/propose`, `/update <revision>`, `/apply`, `/status`, `/validate`, `/verify`, `/sync`, and `/archive`. `/opsx:<name>` and `/opsx-<name>` aliases also work inside the app. These are app commands, independent of the host's slash-command installation. `/apply` generates an isolated implementation preview; writing reviewed files still requires the separate Apply confirmation. Status and validation use the installed local OpenSpec CLI. Other commands wait for the existing agent session.
 
-Build retains planning versions under `.spequi/studio/`. A revision stores exact Markdown before a planning request and after it completes; pending writes are not shown as completed revisions. The most recent 40 versions are retained, with at most 8 MiB of planning documents per version. This is local review evidence; the files under `openspec/` remain the source of truth.
+Planning versions are retained under `.spequi/studio/`. A revision stores exact Markdown before a planning request and after it completes; pending writes are not shown as completed revisions. The most recent 40 versions are retained, with at most 8 MiB of planning documents per version. This is local review evidence; the files under `openspec/` remain the source of truth.
 
-Switch between **Review** and **Build** using the switch beside the logo. Build keeps the project panel in place and puts **Shape spec**, **Implement**, and **Validate & archive** in its header. The document or evidence canvas sits beside one continuous conversation. On narrow screens, use **Document / Conversation**.
+New specs and unfinished drafts keep **Shape spec**, **Implement**, and **Validate & archive** in their header, with the plan beside its retained conversation. Select an existing change in the left panel for document and code review; open **Build** to refine it or run the remaining lifecycle steps. The project panel keeps the same layout in both flows.
 
 In **Shape spec**, select a planning artifact tab and use **Revise spec** to request an update, or **Ask a question** for a read-only exploration. Changes appear as highlighted sections and a document summary. Capabilities with multiple documents show file tabs below their artifact tab. **Planning actions** offers the next artifact or full plan. Documents remain read-only.
 
-In **Implement**, generate an isolated preview and choose its version. Browse changed files directly beneath the selected change in the left panel; filenames show their folder and edit counts, with no file search field. The **Files** button brings that list into view or opens the project drawer on smaller screens. Previous/next file controls, the selected file and diff tools stay above the independently scrolling code. Selecting a file keeps the same preview and Build mode. Inspect the actual diff, then explicitly confirm **Apply reviewed preview**. A changed spec or source conflict prevents application. **Validate & archive** distinguishes local spec validation from agent implementation verification and exposes sync and archive with their normal prerequisites. Archive confirmations appear in the conversation. **New spec** starts the idea-to-plan flow; existing lifecycle URLs remain available for compatibility.
+In **Implement**, generate an isolated preview and choose its version. Browse changed files directly beneath the selected change in the left panel; filenames show their folder and edit counts, with no file search field. The **Files** button brings that list into view for the selected preview. Previous/next file controls, the selected file and diff tools stay above the independently scrolling code. Selecting a file keeps the same preview and planning workspace. Inspect the actual diff, then explicitly confirm **Apply reviewed preview**. A changed spec or source conflict prevents application. **Validate & archive** distinguishes local spec validation from agent implementation verification and exposes sync and archive with their normal prerequisites. Archive confirmations appear in the conversation. **New spec** starts the idea-to-plan flow; old lifecycle URLs redirect to the shared planning workspace.
 
 Status, task readiness, and strict specification validation use the installed `openspec` CLI locally, with no agent required. Missing/incompatible CLI capabilities disable those actions with an explanation while documents and saved diffs remain readable. Spec validation checks requirements; checked task boxes alone do not prove implementation correctness. Setup and administration stay outside this UI.
 
-Reasoning and writing requests use the current session running the viewer skill. Refresh the project skill after upgrading with `node .spequi/cli.mjs skill install`. Required workflows must already be installed; the viewer never launches another agent for a skill handoff. The agent uses `agent ask <id> --token <token> --message "question" [--options '["Yes","No"]']`, then `agent input <id> --token <token> --wait 20` until the app replies. The existing job resumes with the same ownership token; queued and awaiting-input requests can be cancelled. A running request can be ended only after its owning session’s heartbeat expires; stop the old agent in your coding tool first, since ending a request does not terminate its process or undo edits. Keep the agent session attached to continue waiting work.
+Reasoning and writing requests use the current session running the viewer skill. Refresh the project skill after upgrading with `node .spequi/cli.mjs skill install`. Required workflows must already be installed; the viewer never launches another agent for a skill handoff. The agent uses `agent ask <id> --token <token> --message "question" [--options '["Yes","No"]']`, then `agent input <id> --token <token> --wait 300` until the app replies. The existing job resumes with the same ownership token; queued and awaiting-input requests can be cancelled. A running request can be ended only after its owning session’s heartbeat expires; stop the old agent in your coding tool first, since ending a request does not terminate its process or undo edits. Keep the agent session attached to continue waiting work.
 
-Implementation previews still use isolated copies and apply only through an explicit, conflict-checked action. Offline affected-file analysis, optional model proposals, and patch import are available in Build’s Implement stage; generated source also remains reviewable in Review → Files.
+Implementation previews still use isolated copies and apply only through an explicit, conflict-checked action. Offline affected-file analysis, optional model proposals, and patch import are available in the shared Implement stage; generated source remains reviewable in Files.
 
 A saved preview becomes stale when its planning documents change. Generate a fresh preview before applying. Spec updates stay in the same page, with active questions and results shown in the main flow.
 

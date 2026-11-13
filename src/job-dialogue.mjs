@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { getJob, heartbeat } from './jobs.mjs';
+import { getJob, heartbeat, writeJob } from './jobs.mjs';
 import { within, withLock, writeJSON, safeID } from './files.mjs';
 
 async function update(root, id, callback) {
@@ -7,7 +7,7 @@ async function update(root, id, callback) {
   return withLock(await within(root, `.spequi/job-${id}.lock`), async () => {
     const job = await getJob(root, id), result = await callback(job);
     job.updatedAt = new Date().toISOString();
-    await writeJSON(await within(root, `.spequi/jobs/${job.id}.json`), job);
+    await writeJob(root, job);
     return result;
   });
 }

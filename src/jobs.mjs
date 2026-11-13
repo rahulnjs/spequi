@@ -1,7 +1,8 @@
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { readJSON, writeJSON, runtime, safeID, withLock, within } from './files.mjs';
+import { EventEmitter } from 'node:events';
+import { readJSON, writeJSON, runtime, safeID, withLock, within, lockStatus } from './files.mjs';
 import { createPreview, freezePreview } from './previews.mjs';
 import { inventory } from './specs.mjs';
 import { reviewScope, feedbackExport } from './review-store.mjs';
@@ -26,13 +27,44 @@ const skillRoutes = {
   'sync-specs': { skill: 'openspec-sync-specs', required: true }
 };
 const jobPath = (root, id) => runtime(root, 'jobs', `${safeID(id)}.json`);
+const changes = new EventEmitter();
+changes.setMaxListeners(0);
+export async function writeJob(root, job) {
+  await writeJSON(jobPath(root, job.id), job);
+  changes.emit(await fs.realpath(root), job.id);
+}
+// A server-owned read model: progress reads one changed job, never the full history.
+export function createJobReader(root) {
+  let records = new Map(), dirty = new Set(['*']), reading, sorted;
+  const invalidate = id => dirty.add(id || '*');
+  changes.on(root, invalidate);
+  async function read() {
+    if (reading) return reading;
+    reading = (async () => {
+      while (dirty.size) {
+        const batch = [...dirty]; dirty.clear();
+        sorted = null;
+        try {
+          if (batch.includes('*')) records = new Map((await listJobs(root)).map(job => [job.id, job]));
+          else for (const id of batch) {
+            const job = await readJSON(jobPath(root, id));
+            if (job) records.set(id, job); else records.delete(id);
+          }
+        } catch (error) { for (const id of batch) dirty.add(id); throw error; }
+      }
+      return sorted ||= [...records.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    })();
+    try { return await reading; } finally { reading = null; }
+  }
+  return { read, invalidate, close: () => changes.off(root, invalidate) };
+}
 export async function getJob(root, id) { const job = await readJSON(jobPath(root, id)); if (!job) throw new Error('Request not found'); return job; }
 export async function listJobs(root) {
   const entries = await fs.readdir(runtime(root, 'jobs')).catch(error => { if (error.code === 'ENOENT') return []; throw error; });
   const jobs = await Promise.all(entries.filter(file => /^[a-zA-Z0-9_-]+\.json$/.test(file)).map(file => readJSON(runtime(root, 'jobs', file))));
   return jobs.filter(Boolean).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
-async function createJob(root, { action, change = '', message = '', reviewPreview = '', reviewFile = '', feedbackId = '', archiveOverride = false, planMode = 'next' }) {
+async function createJob(root, { action, change = '', message = '', reviewPreview = '', reviewFile = '', feedbackId = '', archiveOverride = false, planMode = 'next', requestKey }) {
   if (!actions.includes(action)) throw new Error('Unknown workflow');
   if (typeof message !== 'string' || message.length > 12000) throw new Error('Instructions must be under 12,000 characters');
   if (['preview', 'verify', 'archive', 'create-change', 'start-plan', 'plan-next', 'revise-plan', 'sync-specs'].includes(action) && !change) throw new Error('Select an active change first');
@@ -55,24 +87,35 @@ async function createJob(root, { action, change = '', message = '', reviewPrevie
   if (['create-change', 'start-plan', 'revise-plan'].includes(action) && !message.trim()) throw new Error('Describe the requested change or revision');
   if (action === 'start-plan' && !['next', 'full'].includes(planMode)) throw new Error('Choose next-artifact or full-plan scope');
   const now = new Date().toISOString();
-  const job = { id: randomUUID(), action, change, message: message.trim(), status: 'queued', createdAt: now, updatedAt: now, logs: [{ at: now, message: 'Waiting for an agent running the viewer skill.' }] };
+  const job = { id: randomUUID(), action, change, message: message.trim(), status: 'queued', createdAt: now, updatedAt: now, logs: [{ at: now, message: 'Queued. Waiting for the attached agent to claim this request.' }] };
   if (action === 'start-plan') job.planMode = planMode;
+  if (requestKey) job.requestKey = requestKey;
   if (change && planningActions.has(action)) job.planBefore = await capturePlan(root, change, 'Before planning request');
   if (action === 'archive' && archiveOverride === true) job.archiveOverride = true;
   if (['impact', 'update-specs'].includes(action)) job.reviewPreview = reviewPreview;
   if (action === 'impact') { job.reviewFile = reviewFile; job.reportPath = `.spequi/impact/${job.id}.md`; }
   if (feedback) { job.feedbackId = feedback.id; job.feedbackPath = feedback.file; job.feedbackHash = feedback.hash; }
-  await writeJSON(jobPath(root, job.id), job);
+  await writeJob(root, job);
   return job;
 }
 export async function enqueue(root, payload) {
-  if (['impact', 'update-specs'].includes(payload.action)) return withLock(await within(root, '.spequi/review-requests.lock'), () => createJob(root, payload));
-  return createJob(root, payload);
+  return withLock(runtime(root, 'enqueue.lock'), async () => {
+    if (payload.requestKey !== undefined) {
+      if (typeof payload.requestKey !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(payload.requestKey)) throw new Error('Invalid request identity');
+      const previous = (await listJobs(root)).find(job => job.requestKey === payload.requestKey);
+      if (previous) {
+        if (previous.action !== payload.action || previous.change !== (payload.change || '') || previous.message !== (payload.message || '').trim()) throw new Error('Request identity was already used for different instructions');
+        return previous;
+      }
+    }
+    if (['impact', 'update-specs'].includes(payload.action)) return withLock(await within(root, '.spequi/review-requests.lock'), () => createJob(root, payload));
+    return createJob(root, payload);
+  });
 }
 function instructions(job) {
   const context = ['create-change', 'start-plan'].includes(job.action) ? `Requested new change name: ${job.change}. Do not replace an existing change.` : job.change ? `Selected OpenSpec change: ${job.change}. Use that exact change and discover its available planning artifacts through the installed workflow.` : 'Read the local OpenSpec configuration and relevant project files.';
   const { skill, required, directory, protocolDirectory } = job.workflow;
-  const routing = `Continue in the current agent session. Workflow directory: ${JSON.stringify(directory)}. Protocol directory: ${JSON.stringify(protocolDirectory)}. ${skill ? `Load and follow the installed ${skill} skill, or its equivalent registered workflow, in this same session. ${required ? `If that workflow is unavailable, fail this job with the missing prerequisite; do not invent or install a replacement.` : 'If unavailable, perform the read-only workflow described below directly.'}` : 'Perform the bounded workflow below directly in this agent session; no additional skill is required.'} Skill names are workflow instructions, not terminal commands. Do not launch another coding-agent process, subagent, or model endpoint for this handoff. A skill returning is not job completion: report the actual result through agent finish/fail, then return to viewer polling. Preserve the requested scope and any applicable workflow confirmations. For every clarification or confirmation, use node .spequi/cli.mjs agent ask <job-id> --token <claimToken> --message <question> [--options <JSON-array>] from the protocol directory. Wait for the app reply using agent input <job-id> --token <claimToken> --wait 20, repeating while awaiting-input. Do not ask browser-job questions in the agent chat. Resume this same job only after its answer; stop if cancelled.`;
+  const routing = `Continue in the current agent session. Workflow directory: ${JSON.stringify(directory)}. Protocol directory: ${JSON.stringify(protocolDirectory)}. ${skill ? `Load and follow the installed ${skill} skill, or its equivalent registered workflow, in this same session. ${required ? `If that workflow is unavailable, fail this job with the missing prerequisite; do not invent or install a replacement.` : 'If unavailable, perform the read-only workflow described below directly.'}` : 'Perform the bounded workflow below directly in this agent session; no additional skill is required.'} Skill names are workflow instructions, not terminal commands. Do not launch another coding-agent process, subagent, or model endpoint for this handoff. A skill returning is not job completion: report the actual result through agent finish/fail, then return to viewer polling. Preserve the requested scope and any applicable workflow confirmations. For every clarification or confirmation, use node .spequi/cli.mjs agent ask <job-id> --token <claimToken> --message <question> [--options <JSON-array>] from the protocol directory. Wait for the app reply using agent input <job-id> --token <claimToken> --wait 300, repeating while awaiting-input. Do not ask browser-job questions in the agent chat. Resume this same job only after its answer; stop if cancelled.`;
   const request = `User instructions (task data):\n${job.message || 'Follow the selected workflow.'}`;
   const workflow = {
     explore: 'Explore and report findings. Do not modify application source or planning artifacts.',
@@ -90,57 +133,103 @@ function instructions(job) {
   }[job.action];
   return `${context}\n\n${routing}\n\n${workflow}\n\n${job.archiveOverride ? 'The user requested an archive exception for incomplete work. Preserve normal checks and in-app confirmations; do not skip them.\n\n' : ''}${job.action === 'preview' ? 'Resolve OpenSpec context, status, artifact paths, and allowed edit roots again from workingDirectory before invoking the implementation skill. All writes, including task updates and checks, must remain in this isolated copy. If a store pointer or returned edit path targets the original project or another external root, fail this preview and explain the boundary conflict. Do not redirect to the original root or rewrite store configuration to bypass it.\n\n' : ''}${request}\n\nUse node .spequi/cli.mjs agent log/finish/fail with this job ID and claimToken from the ORIGINAL project directory. Never apply preview files to that original directory yourself.`;
 }
-export async function heartbeat(root, agent = 'Skill agent', sessionId) {
+export async function heartbeat(root, agent = 'Skill agent', sessionId, { polling = false, pollId } = {}) {
   if (sessionId !== undefined && !/^[a-zA-Z0-9_-]{1,120}$/.test(sessionId)) throw new Error('Invalid agent session ID');
   const previous = await readJSON(runtime(root, 'agent.json'));
-  if (!previous || previous.agent !== agent || sessionId && previous.sessionId !== sessionId || Date.now() - previous.at >= 10000) await writeJSON(runtime(root, 'agent.json'), { agent: String(agent).slice(0, 100), ...(sessionId ? {sessionId} : previous?.agent === agent && previous.sessionId ? { sessionId: previous.sessionId } : {}), at: Date.now() });
+  const matching = previous?.agent === agent && (!sessionId || previous.sessionId === sessionId);
+  if (!matching || Date.now() - previous.at >= 10000 || polling && (Date.now() - (previous.lastPollAt || 0) >= 10000 || !previous.pollingUntil || pollId && previous.pollId !== pollId)) {
+    await writeJSON(runtime(root, 'agent.json'), { ...(matching ? previous : {}), agent: String(agent).slice(0, 100), ...(sessionId ? { sessionId } : {}), at: Date.now(), ...(polling ? { lastPollAt: Date.now(), pollingUntil: Date.now() + 15000, ...(pollId ? { pollId } : {}) } : {}) });
+  }
 }
-export async function agentStatus(root) {
+export async function stopPolling(root, agent, sessionId, pollId) {
+  const state = await readJSON(runtime(root, 'agent.json'));
+  if (state?.agent === agent && (!sessionId || state.sessionId === sessionId) && state.pollId === pollId) await writeJSON(runtime(root, 'agent.json'), { ...state, pollingUntil: 0 });
+}
+export async function queueStatus(root, jobs, state) {
+  jobs ||= await listJobs(root);
+  const lock = await lockStatus(runtime(root, 'queue.lock'));
+  const active = jobs.find(job => ['running', 'awaiting-input'].includes(job.status));
+  state ||= await readJSON(runtime(root, 'agent.json'));
+  const ownerConnected = Boolean(active && state?.agent === active.agent && (!active.agentSessionId || active.agentSessionId === state.sessionId) && Date.now() - state.at < 45000);
+  const queued = jobs.filter(job => job.status === 'queued').length;
+  const blocked = lock.exists && lock.age > 2000;
+  return { status: blocked ? 'blocked' : active ? 'working' : lock.exists ? 'busy' : queued ? 'ready' : 'idle', queued, active: active ? { id: active.id, change: active.change, status: active.status, preparing: Boolean(active.preparing), origin: active.origin || null, ownerConnected } : null,
+    ...(blocked ? { message: lock.stale ? 'An abandoned queue lock will be recovered on the next poll.' : 'The queue lock is held. Requests are saved; the queue is not empty.' } : {}) };
+}
+export async function agentStatus(root, { jobs } = {}) {
   const state = await readJSON(runtime(root, 'agent.json'));
   const connected = Boolean(state && Date.now() - state.at < 45000);
-  const pending = (await listJobs(root)).find(job => job.agent === state?.agent && (!state?.sessionId || job.agentSessionId === state.sessionId) && ['running', 'awaiting-input'].includes(job.status));
-  const status = !connected ? state ? 'unresponsive' : 'unattached' : pending?.status === 'awaiting-input' ? 'waiting' : pending ? 'working' : 'live';
-  const result = { ...state, connected, status };
-  return { ...result, mcps: await sessionEvidence(root,result) };
+  jobs ||= await listJobs(root);
+  const pending = jobs.find(job => job.agent === state?.agent && (!state?.sessionId || job.agentSessionId === state.sessionId) && ['running', 'awaiting-input'].includes(job.status));
+  const queue = await queueStatus(root, jobs, state);
+  const stalled = queue.active && !queue.active.ownerConnected && !jobs.find(job => job.id === queue.active.id)?.origin;
+  if (stalled) queue.message = 'An earlier agent owns the active request. Stop that agent, then end the stalled request before continuing.';
+  const ready = connected && state?.pollingUntil > Date.now() && queue.status !== 'blocked' && !stalled;
+  const status = !connected ? state ? 'unresponsive' : 'unattached' : queue.status === 'blocked' || stalled ? 'blocked' : pending?.status === 'awaiting-input' ? 'waiting' : pending ? 'working' : ready ? 'live' : 'connected';
+  const result = { ...state, connected, ready, status, queue };
+  return { ...result, mcps: await sessionEvidence(root, result) };
 }
-export async function claimNext(root, agent, sessionId) {
-  await heartbeat(root, agent, sessionId);
+export async function claimNext(root, agent = 'Skill agent', sessionId) {
+  await heartbeat(root, agent, sessionId, { polling: true });
+  const job = await withLock(runtime(root, 'queue.lock'), async () => {
+    const jobs = await listJobs(root);
+    // One active workflow per project; parallel polls cannot claim a second request.
+    if (jobs.some(item => ['running', 'awaiting-input'].includes(item.status))) return null;
+    const job = jobs.reverse().find(item => item.status === 'queued');
+    if (!job) return null;
+    job.status = 'running'; job.preparing = true; job.claimToken = randomUUID(); job.updatedAt = new Date().toISOString(); job.agent = agent;
+    const attached = await readJSON(runtime(root, 'agent.json'));
+    if (attached?.agent === agent && attached.sessionId) job.agentSessionId = attached.sessionId;
+    await writeJob(root, job);
+    return job;
+  });
+  if (!job) return null;
+  let ping = Promise.resolve(), pinging = false;
+  const preparationHeartbeat = setInterval(() => {
+    if (pinging) return;
+    pinging = true;
+    ping = heartbeat(root, job.agent, job.agentSessionId).catch(() => {}).finally(() => { pinging = false; });
+  }, 10000);
+  preparationHeartbeat.unref();
+  // Snapshotting and plan capture can be slow. They must never hold queue.lock.
   try {
-    return await withLock(runtime(root, 'queue.lock'), async () => {
-      const job = (await listJobs(root)).reverse().find(job => job.status === 'queued');
-      if (!job) return null;
-      job.status = 'running'; job.claimToken = randomUUID(); job.updatedAt = new Date().toISOString(); job.agent = agent || 'Skill agent';
-      const attached = await readJSON(runtime(root, 'agent.json'));
-      if (attached?.agent === job.agent && attached.sessionId) job.agentSessionId = attached.sessionId;
-      await writeJSON(jobPath(root, job.id), job);
-      try {
-        if (job.action === 'start-plan' && (await inventory(root)).changes.some(item => item.id === job.change)) throw new Error('A change with this name already exists. Start a new request with another name.');
-        if (job.change && planningActions.has(job.action)) job.planBefore = await capturePlan(root, job.change, 'Before agent starts planning');
-        if (job.action === 'update-specs') {
-          const feedback = await feedbackExport(root, job.reviewPreview, job.feedbackId);
-          if (feedback.hash !== job.feedbackHash) throw new Error('Queued feedback identity changed; submit a new planning update');
-        }
-        job.workingDirectory = job.action === 'preview' ? await createPreview(root, job.id) : root;
-        job.workflow = { mode: 'same-session', ...(job.action === 'start-plan' && job.planMode === 'full' ? skillRoutes.propose : skillRoutes[job.action]), directory: job.workingDirectory, protocolDirectory: root, change: job.change };
-        if (job.action === 'impact') await fs.mkdir(await within(root, '.spequi/impact'), { recursive: true });
-        job.instructions = instructions(job);
-        job.logs.push({ at: new Date().toISOString(), message: job.action === 'preview' ? 'Agent attached. Isolated project snapshot is ready.' : 'Agent claimed this request.' });
-        await writeJSON(jobPath(root, job.id), job);
-        return job;
-      } catch (error) {
-        job.status = 'failed'; job.result = error.message; job.updatedAt = new Date().toISOString();
-        await writeJSON(jobPath(root, job.id), job);
-        throw error;
+    if (job.action === 'start-plan' && (await inventory(root)).changes.some(item => item.id === job.change)) throw new Error('A change with this name already exists. Start a new request with another name.');
+    if (job.change && planningActions.has(job.action)) job.planBefore = await capturePlan(root, job.change, 'Before agent starts planning');
+    if (job.action === 'update-specs') {
+      const feedback = await feedbackExport(root, job.reviewPreview, job.feedbackId);
+      if (feedback.hash !== job.feedbackHash) throw new Error('Queued feedback identity changed; submit a new planning update');
+    }
+    job.workingDirectory = job.action === 'preview' ? await createPreview(root, job.id) : root;
+    job.workflow = { mode: 'same-session', ...(job.action === 'start-plan' && job.planMode === 'full' ? skillRoutes.propose : skillRoutes[job.action]), directory: job.workingDirectory, protocolDirectory: root, change: job.change };
+    if (job.action === 'impact') await fs.mkdir(await within(root, '.spequi/impact'), { recursive: true });
+    job.instructions = instructions(job);
+    return await withLock(runtime(root, `job-${job.id}.lock`), async () => {
+      const current = await getJob(root, job.id);
+      if (current.status !== 'running' || current.claimToken !== job.claimToken) throw new Error('Request ended while it was being prepared');
+      Object.assign(current, { workingDirectory: job.workingDirectory, workflow: job.workflow, instructions: job.instructions, planBefore: job.planBefore, preparing: false, updatedAt: new Date().toISOString() });
+      current.logs.push({ at: current.updatedAt, message: job.action === 'preview' ? 'Agent attached. Isolated project snapshot is ready.' : 'Agent claimed this request.' });
+      await writeJob(root, current);
+      return current;
+    });
+  } catch (error) {
+    await withLock(runtime(root, `job-${job.id}.lock`), async () => {
+      const current = await getJob(root, job.id);
+      if (current.status === 'running' && current.claimToken === job.claimToken) {
+        Object.assign(current, { status: 'failed', preparing: false, result: error.message, updatedAt: new Date().toISOString() });
+        await writeJob(root, current);
       }
     });
-  } catch (error) { if (error.message.startsWith('Another operation')) return null; throw error; }
+    throw error;
+  } finally { clearInterval(preparationHeartbeat); await ping; }
 }
 export async function updateJob(root, id, token, operation, message) {
   if (!['log', 'finish', 'fail', 'cancel'].includes(operation)) throw new Error('Unknown request operation');
   return withLock(runtime(root, `job-${safeID(id)}.lock`), async () => {
     const job = await getJob(root, id);
+    if (operation === 'cancel' && job.status === 'cancelled' || operation === 'finish' && job.status === 'completed' && token && token === job.claimToken || operation === 'fail' && job.status === 'failed' && token && token === job.claimToken) return job;
     if (operation === 'cancel') {
       if (job.status === 'running') {
+        if (job.origin) throw new Error('The offline preview is still being prepared. Wait for it to finish before removing it.');
         const state = await readJSON(runtime(root, 'agent.json'));
         const ownerIsLive = state?.agent === job.agent && (!job.agentSessionId || state.sessionId === job.agentSessionId) && Date.now() - state.at < 45000;
         if (ownerIsLive) throw new Error('The agent is still responding. Stop it in your coding tool before ending this request.');
@@ -168,7 +257,7 @@ export async function updateJob(root, id, token, operation, message) {
     job.updatedAt = new Date().toISOString();
     job.logs.push({ at: job.updatedAt, message: String(message || operation).slice(0, 12000) });
     job.logs = job.logs.slice(-200);
-    await writeJSON(jobPath(root, id), job);
+    await writeJob(root, job);
     return job;
   });
 }

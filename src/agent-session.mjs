@@ -19,7 +19,8 @@ export async function reportSession(root,{agent='Skill agent',sessionId,mcps}={}
     const id=sessionId||randomUUID();
     const report={agent,sessionId:id,reportedAt:Date.now(),mcps:{supported:mcps.supported,connections}};
     await writeJSON(runtime(root,'agent-session.json'),report);
-    await writeJSON(runtime(root,'agent.json'),{agent,sessionId:id,at:Date.now()});
+    const previous=await readJSON(runtime(root,'agent.json'));
+    await writeJSON(runtime(root,'agent.json'),{...(previous?.agent===agent&&previous.sessionId===id?previous:{}),agent,sessionId:id,at:Date.now()});
     return {sessionId:id,reportedAt:report.reportedAt,connections:connections.length};
   });
 }

@@ -10,7 +10,7 @@ There is no `await invokeSkill()` implementation. A skill is an instruction docu
 
 | Component | Responsibility | Implementation |
 | --- | --- | --- |
-| Browser UI | Submit actions, display progress, collect answers | [public/lifecycle.js](../public/lifecycle.js), [src/studio-view.mjs](../src/studio-view.mjs) |
+| Browser UI | Submit actions, display progress, collect answers | [public/workflow.js](../public/workflow.js), [src/studio-view.mjs](../src/studio-view.mjs) |
 | Local server | Protect browser mutations, route actions and replies, notify the UI | [src/server.mjs](../src/server.mjs) |
 | Lifecycle layer | Check readiness and enqueue the requested action | [src/lifecycle.mjs](../src/lifecycle.mjs) |
 | Job queue | Persist requests, claim ownership, choose workflows, store results | [src/jobs.mjs](../src/jobs.mjs) |
@@ -19,7 +19,7 @@ There is no `await invokeSkill()` implementation. A skill is an instruction docu
 | Question storage | Retain questions and answers on the same owned job | [src/job-dialogue.mjs](../src/job-dialogue.mjs) |
 | Agent skill | Instruct the current agent to coordinate the loop | [spequi SKILL.md](../skills/spequi/SKILL.md) |
 
-The browser talks to the server over local HTTP and receives WebSocket notifications. The agent's CLI commands communicate through project-local files. They do not send prompts over the browser's WebSocket connection.
+The browser talks to the server over local HTTP and receives WebSocket notifications. The agent’s CLI commands use the project server’s authenticated loopback protocol when it is running. `.spequi/server.json` binds that connection to the project root; an unavailable saved connection is an explicit restart error. Headless commands without a server retain the file protocol. They do not send prompts over the browser's WebSocket connection.
 
 Typical retained state looks like:
 
@@ -27,6 +27,8 @@ Typical retained state looks like:
 .spequi/
   cli.mjs                 Project launcher for the initialized package
   server.mjs              Project server launcher
+  server.json             Private root-bound agent protocol connection
+  drafts/                 Autosaved ideas and unfinished planning references
   agent.json              Latest agent heartbeat
   agent-session.json      Session ID and reported MCP metadata
   jobs/
@@ -104,38 +106,25 @@ Source: [`reportSession()`](../src/agent-session.mjs).
 
 This session ID belongs to the viewer attachment. It is not a provider API credential or an integration with the coding tool's internal conversation ID. The agent retains it and uses it on subsequent polls.
 
-### Poll for work
+### Wait, then claim
 
 ```bash
-node .spequi/cli.mjs agent next \
-  --wait 20 \
-  --name Codex \
-  --session-id example-attachment
+node .spequi/cli.mjs agent wait --wait 300 \
+  --name Codex --session-id example-attachment
 ```
 
-The CLI checks for queued work once per second during that bounded wait. It returns immediately when it claims a job; otherwise it returns `{"job":null}` after the timeout. The agent then polls again while the skill remains active.
+In GigaCode, launch this bounded wait and the retained server using the host Shell tool’s `is_background: true` argument. Keep the task ID and monitor the completion result. The wait refreshes consumer liveness and returns `available: true` when work is available, without claiming it. Once this session receives the output, claim in the foreground:
 
-The following is the actual polling structure, shortened to show the relevant branch:
-
-```js
-const wait = Math.min(60, Math.max(0, Number(option('wait', 0)) || 0));
-const deadline = Date.now() + wait * 1000;
-let job;
-
-do {
-  job = await claimNext(
-    root,
-    option('name', 'Skill agent'),
-    option('session-id')
-  );
-  if (job || Date.now() >= deadline) break;
-  await delay(1000);
-} while (true);
-
-print({ job });
+```bash
+node .spequi/cli.mjs agent next --wait 0 \
+  --name Codex --session-id example-attachment
 ```
 
-Source: [`agent next` in the CLI](../bin/spequi.mjs).
+A first-attachment `agent wait --wait 1` checks host completion delivery. If GigaCode does not resume the session automatically, use its task monitor or retained foreground polling; a background process alone cannot wake the model. Attachment lasts while the coding session remains open, including idle periods supported by that notification mechanism.
+
+Waits are bounded at five minutes and check for work every 250 ms. An empty result includes queue state. Contention and blocked locks are errors, never an empty queue. An owned active request blocks additional claims. Finish or answer it before claiming another; review partial planning work before any retry.
+
+Source: [agent CLI](../bin/spequi.mjs), [root-bound client](../src/agent-client.mjs), and [agent protocol routes](../src/server.mjs).
 
 ## 3. A UI action becomes a durable job
 
@@ -175,7 +164,7 @@ Source: [`requestLifecycle()`](../src/lifecycle.mjs) and [`createJob()` / `enque
 
 ## 4. Claiming establishes ownership and selects the skill
 
-`claimNext()` updates the heartbeat, acquires the queue lock and selects the oldest queued request. It changes the job to `running`, assigns a random claim token and records the agent attachment identity.
+`claimNext()` updates the heartbeat, acquires the queue lock and selects the oldest queued request. It changes the job to `running`, assigns a random claim token and records the agent attachment identity. Only one workflow runs per project. The short claim releases the queue lock before snapshot copying or plan capture; preparation failures are retained as failed requests. Locks record their process owner and recover abandoned dead-owner or aged legacy empty files. Live lock contention remains explicit.
 
 The claim token is required for the agent's subsequent log, question, input and completion commands. A second agent cannot complete the same job just by knowing its ID.
 
@@ -338,10 +327,10 @@ The agent then waits with:
 
 ```bash
 node .spequi/cli.mjs agent input JOB_ID \
-  --token CLAIM_TOKEN --wait 20
+  --token CLAIM_TOKEN --wait 300
 ```
 
-The CLI reads the job once per second until the status changes or the timeout expires. If it is still `awaiting-input`, the agent repeats the bounded wait. It does not release the job or make a second claim.
+The CLI checks the owned job every 250 ms until the status changes or the bounded wait expires. If it is still `awaiting-input`, the agent repeats the bounded wait. It does not release the job or make a second claim.
 
 The user answers through this protected browser route:
 
@@ -396,7 +385,7 @@ job.result = message || 'Completed';
 
 The app waits for this explicit completion. It does not infer completion because the agent read a skill, produced a chat response, checked some task boxes, or stopped polling. The checks also do not prove every instruction was followed or every behavior is correct; verification and code review still matter.
 
-After finishing or failing, the agent returns to `agent next` while attached.
+After finishing or failing, the agent returns to `agent wait`, then claims in the foreground while attached.
 
 Source: [`updateJob()`](../src/jobs.mjs).
 
@@ -410,7 +399,7 @@ const connected = Boolean(state && Date.now() - state.at < 45000);
 
 A recent heartbeat means the attachment has recently communicated. It does not prove a particular model request is progressing. Likewise, a missing heartbeat does not prove the coding process crashed: a long tool call or an agent that stopped running the loop can also make the attachment appear unresponsive.
 
-Polling and owned log/input/question calls refresh the heartbeat. The agent must keep communicating during work; the implementation does not start an independent background heartbeat daemon.
+Polling and owned log/input/question calls refresh the heartbeat. A session report alone means connected, not ready. Ready additionally requires a current consumer wait lease; finishing or disconnecting that wait clears readiness. Working and awaiting-input states follow the owned request. The header exposes queued counts, last heartbeat and blocked/stalled ownership separately. The agent must keep communicating during work; the implementation does not start an independent background heartbeat daemon.
 
 MCP status is a separate report. The host must supply authoritative connection evidence; a configured server or a tool catalog alone is insufficient. Reports contain display names and allowed connection states, not credentials or transport configuration. MCP evidence also expires after five minutes and must match the current attachment.
 
@@ -437,7 +426,7 @@ sequenceDiagram
     participant Skill as Installed SKILL.md
 
     User->>Agent: Invoke spequi
-    Agent->>App: agent report and agent next
+    Agent->>App: agent report and monitored agent wait
     User->>UI: Request a workflow
     UI->>App: POST lifecycle action
     App->>App: Persist queued job
@@ -451,7 +440,7 @@ sequenceDiagram
         App-->>UI: Question available
         par Agent waits
             loop While awaiting-input
-                Agent->>App: agent input --wait 20
+                Agent->>App: agent input --wait 300
                 App-->>Agent: Current question and status
             end
         and User answers
@@ -464,7 +453,7 @@ sequenceDiagram
     Agent->>App: agent finish or agent fail
     App->>App: Validate completion and persist result
     App-->>UI: Updated status and result
-    Agent->>App: Return to agent next
+    Agent->>App: Return to monitored agent wait
 ```
 
 The queue, ownership, persistence, questions and status checks are application code. Carrying out a selected skill is the cooperating agent's work in its existing session. Keeping those responsibilities explicit explains both why the flow works across skill-capable coding tools and why it pauses when the agent stops serving the queue.

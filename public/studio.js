@@ -15,7 +15,7 @@
   function synchronizeSearch() {
     const form = document.querySelector('#navigation .search'); if (!form || !workspace()) return;
     const url = new URL(canonical(), location.href);
-    for (const name of ['change', 'view', 'doc', 'stage', 'plan', 'compare', 'pane', 'job', 'file', 'mode', 'wrap', 'new', 'creation', 'created']) {
+    for (const name of ['change', 'view', 'doc', 'stage', 'plan', 'compare', 'pane', 'job', 'file', 'mode', 'wrap', 'new', 'creation', 'created', 'draft']) {
       const value = name === 'change' ? workspace().dataset.change : name === 'view' ? workspace().dataset.view : url.searchParams.get(name);
       let input = form.querySelector(`input[type=hidden][name="${name}"]`);
       if (!value) { input?.remove(); continue; }
@@ -48,7 +48,7 @@
     studio.dataset.conversationExpanded = String(expanded);
     const button = studio.querySelector('[data-studio-expand]');
     button?.setAttribute('aria-expanded', String(expanded));
-    if (button) button.textContent = expanded ? 'Show document' : 'Expand conversation';
+    if (button) (button.querySelector('[data-studio-expand-label]') || button).textContent = expanded ? 'Show document' : 'Expand conversation';
   }
   function initialize() {
     if (!workspace()) return;
@@ -66,11 +66,6 @@
     for (const node of document.querySelectorAll('[data-studio-stage]')) {
       const previous = saved.stages[node.dataset.studioStage];
       if (previous) setURL(node, withSearch(previous));
-    }
-    for (const node of document.querySelectorAll('#navigation .change-link')) {
-      const url = new URL(node.getAttribute('href'), location.href);
-      url.searchParams.set('view', currentMode === 'build' ? 'studio' : 'rendered');
-      setURL(node, withSearch(url.pathname + url.search));
     }
     const place = positions.get(canonical());
     const sidebar = document.getElementById('navigation'), canvas = document.getElementById('studio-canvas-body'), thread = document.getElementById('studio-thread');

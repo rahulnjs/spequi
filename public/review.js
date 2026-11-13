@@ -186,7 +186,10 @@
     const { preview, change } = node.dataset;
     if (updating.has(change) || node.dataset.blocked === 'true') return;
     remember(); updating.add(change);
-    updateMessages.set(change, { message: 'Queuing your OpenSpec planning update…' }); restoreUpdateState();
+    updateMessages.delete(change);
+    document.getElementById('review-feedback')?.replaceChildren();
+    form()?.querySelector('[data-composer-feedback]')?.replaceChildren();
+    restoreUpdateState();
     try {
       const response = await fetch(node.getAttribute('action'), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content }, body: '' });
       const result = response.headers.get('content-type')?.includes('application/json') ? await response.json() : {};
@@ -198,7 +201,7 @@
       node.dataset.pendingStatus = 'queued';
       updateMessages.delete(change); exportMessages.delete(preview);
       await refreshComments(preview, '', { change, outcome: 'Planning update queued' });
-      if (document.getElementById('workspace')?.dataset.change === change) feedback('Planning update queued. Your attached agent will process this feedback snapshot.', false, exported.downloadUrl);
+      document.dispatchEvent(new window.CustomEvent('spequi-toast', { detail: { message: 'Planning update queued. Your attached agent will process this feedback snapshot.', downloadUrl: exported.downloadUrl } }));
     } catch (error) {
       updateMessages.set(change, { message: error instanceof TypeError ? 'Could not reach the viewer. Check that the server is running and retry Update spec.' : error.message, error: true });
     } finally {

@@ -1,0 +1,118 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
+import { once } from 'node:events';
+import { createHash } from 'node:crypto';
+
+const exec = promisify(execFile);
+const checkout = fileURLToPath(new URL('../', import.meta.url));
+const npmCLI = process.env.npm_execpath;
+if (!npmCLI) throw new Error('Run this check with npm run smoke:package.');
+const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'opsx package smoke '));
+const prefix = path.join(temporary, 'global install');
+const root = path.join(temporary, 'project with spaces');
+let server;
+const run = async (entry, args, cwd = root) => (await exec(process.execPath, [entry, ...args], { cwd, timeout: 120000, maxBuffer: 4 * 1024 * 1024 })).stdout;
+const put = async (relative, text) => { const target = path.join(root, relative); await fs.mkdir(path.dirname(target), { recursive: true }); await fs.writeFile(target, text); };
+try {
+  const packed = JSON.parse(await run(npmCLI, ['pack', '--json', '--pack-destination', temporary], checkout))[0];
+  assert.ok(packed.files.some(file => file.path === 'skills/spequi/SKILL.md'));
+  assert.ok(!packed.files.some(file => /^(?:\.spequi|node_modules|test)\//.test(file.path)));
+  await run(npmCLI, ['install', '--global', '--prefix', prefix, '--ignore-scripts', '--no-audit', '--no-fund', '--loglevel=error', path.join(temporary, packed.filename)], checkout);
+  const installed = path.join(prefix, process.platform === 'win32' ? 'node_modules' : 'lib/node_modules', 'spequi');
+  const cli = path.join(installed, 'bin/spequi.mjs');
+  await fs.access(path.join(prefix, process.platform === 'win32' ? 'spequi.cmd' : 'bin/spequi'));
+  await fs.mkdir(root);
+  assert.equal((await run(cli, ['--version'])).trim(), packed.version);
+  await run(cli, ['init']);
+  await put('.spequi/config.json', JSON.stringify({ version: 1, port: 0, openspecDir: 'openspec' }));
+  await run(cli, ['init']);
+  assert.equal(JSON.parse(await fs.readFile(path.join(root, '.spequi/config.json'))).port, 0);
+  assert.equal((await fs.readFile(path.join(root, '.gitignore'), 'utf8')).match(/\.spequi\//g).length, 1);
+  await fs.access(path.join(root, '.agents/skills/spequi/SKILL.md'));
+  await fs.access(path.join(root, '.claude/commands/spequi.md'));
+  for (const file of ['.gigacode/skills/spequi/SKILL.md', '.gigacode/commands/spequi.md']) await fs.access(path.join(root, file));
+  const proposal = 'openspec/changes/smoke/proposal.md';
+  const spec = 'openspec/changes/smoke/specs/feature/spec.md';
+  await put(proposal, '# Smoke feature\n\n## Why\n\nEnable a reviewed feature.\n');
+  await put('openspec/changes/smoke/design.md', '# Design\n\nExport an enabled flag.\n');
+  await put('openspec/changes/smoke/tasks.md', '# Tasks\n\n- [ ] 1.1 Export the enabled flag.\n');
+  await put(spec, '# Feature\n\n## ADDED Requirements\n\n### Requirement: Enabled feature\nThe feature SHALL export an enabled flag.\n\n#### Scenario: Read flag\n- **WHEN** a consumer imports the flag\n- **THEN** the flag is enabled\n');
+  const original = 'export const enabled = false;\r\n';
+  await put('app.mjs', original);
+  server = spawn(process.execPath, [path.join(root, '.spequi/server.mjs')], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+  const origin = await new Promise((resolve, reject) => {
+    let output = '';
+    const timeout = setTimeout(() => reject(new Error('Generated server did not start')), 15000);
+    const finish = callback => value => { clearTimeout(timeout); callback(value); };
+    server.once('error', finish(reject));
+    server.once('exit', finish(code => reject(new Error(`Generated server exited ${code}: ${output}`))));
+    server.stderr.on('data', chunk => { output += chunk; });
+    server.stdout.on('data', chunk => { output += chunk; const match = output.match(/http:\/\/127\.0\.0\.1:\d+/); if (match) finish(resolve)(match[0]); });
+  });
+  const page = await (await fetch(origin)).text();
+  const csrf = page.match(/name="csrf-token" content="([^"]+)"/)[1];
+  for (const asset of ['/assets/app.css', '/assets/diff.css', '/assets/review.css', '/assets/app.js', '/assets/review.js', '/assets/workflow.js', '/assets/studio.css', '/assets/studio.js', '/assets/session.js', '/assets/requests.js', '/assets/fonts.css', '/assets/fonts/dm-sans-variable-latin.woff2', '/vendor/htmx.js']) assert.equal((await fetch(origin + asset)).status, 200, asset);
+  const post = async (route, value = {}, status = 201) => {
+    const response = await fetch(origin + route, { method: 'POST', headers: { Origin: origin, 'X-CSRF-Token': csrf, Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
+    const text = await response.text(); assert.equal(response.status, status, text);
+    return response.headers.get('content-type')?.includes('application/json') ? JSON.parse(text) : text;
+  };
+  await put('.spequi/smoke-session.json', JSON.stringify({ sessionId: 'package-smoke-session', mcps: { supported: false, connections: [] } }));
+  const attached = JSON.parse(await run(cli, ['agent', 'report', '--file', path.join(root, '.spequi/smoke-session.json'), '--name', 'Package smoke agent']));
+  assert.equal(attached.sessionId, 'package-smoke-session');
+  const next = async () => JSON.parse(await run(cli, ['agent', 'next', '--name', 'Package smoke agent'])).job;
+  const finish = job => run(cli, ['agent', 'finish', job.id, '--token', job.claimToken, '--message', 'Controlled package smoke checks passed']);
+  await post('/api/jobs', { action: 'preview', change: 'smoke' });
+  const preview = await next(); assert.equal(preview.action, 'preview'); assert.notEqual(preview.workingDirectory, root);
+  await fs.writeFile(path.join(preview.workingDirectory, 'app.mjs'), 'export const enabled = true;\r\n');
+  await fs.mkdir(path.join(preview.workingDirectory, '.spequi'), { recursive: true });
+  await fs.writeFile(path.join(preview.workingDirectory, '.spequi/spec-links.json'), JSON.stringify({ version: 1, links: [{ file: 'app.mjs', side: 'proposed', start: 1, end: 1, spec, specStart: 5, specEnd: 10 }] }));
+  await finish(preview);
+  assert.equal(await fs.readFile(path.join(root, 'app.mjs'), 'utf8'), original);
+  const diff = await (await fetch(`${origin}/?change=smoke&view=preview&job=${preview.id}&file=app.mjs`)).text();
+  assert.match(diff, /unified-diff-table/); assert.match(diff, /syntax-token/);
+  assert.match(diff, /Agent linked/); assert.match(diff, /The feature SHALL export an enabled flag/);
+  const build = await (await fetch(`${origin}/?change=smoke&view=studio&stage=implement&job=${preview.id}&file=app.mjs&mode=split`)).text();
+  assert.match(build, /split-diff-table/); assert.match(build, /Agent linked/);
+  const { comment } = await post(`/api/reviews/${preview.id}/comments`, { file: 'app.mjs', side: 'proposed', start: 1, end: 1, body: 'Document that the flag is enabled by default and add a scenario for that default.' });
+  const { exported, update } = await post(`/api/reviews/${preview.id}/update-specs`);
+  const feedback = await (await fetch(origin + exported.downloadUrl)).text();
+  assert.ok(feedback.includes(comment.id)); assert.ok(feedback.includes(comment.body)); assert.ok(feedback.includes('export const enabled = true;'));
+  const hash = text => createHash('sha256').update(text).digest('hex');
+  assert.equal(hash(feedback), exported.hash);
+  const planning = await next();
+  assert.equal(planning.id, update.id); assert.equal(planning.feedbackHash, exported.hash);
+  assert.match(planning.instructions, /Do not implement or apply code/);
+  assert.equal(planning.workingDirectory, await fs.realpath(root));
+  // A deterministic agent stand-in tests the transport and planning boundary.
+  // It does not evaluate an LLM or stand in for OpenSpec strict validation.
+  await fs.appendFile(path.join(root, proposal), '\n## Default behavior\n\nThe enabled flag defaults to true.\n');
+  await fs.appendFile(path.join(root, spec), '\n#### Scenario: Default enabled flag\n- **WHEN** a consumer imports the default flag\n- **THEN** its value is true without configuration\n');
+  await finish(planning);
+  assert.equal(await fs.readFile(path.join(root, 'app.mjs'), 'utf8'), original);
+  assert.equal(hash(await (await fetch(origin + exported.downloadUrl)).text()), exported.hash);
+  const state = await (await fetch(origin + '/api/state')).json();
+  assert.equal(state.jobs.find(job => job.id === update.id).status, 'completed');
+  assert.ok(state.jobs.every(job => !job.claimToken && !job.instructions));
+  assert.match(await (await fetch(`${origin}/?change=smoke`)).text(), /The enabled flag defaults to true/);
+  await post(`/api/reviews/${preview.id}/comments/${comment.id}/delete`, {}, 200);
+  assert.equal(hash(await (await fetch(origin + exported.downloadUrl)).text()), exported.hash);
+  // A new preview uses the revised plan and exercises the actual protected apply route.
+  await post('/api/jobs', { action: 'preview', change: 'smoke' });
+  const latest = await next();
+  await fs.writeFile(path.join(latest.workingDirectory, 'app.mjs'), 'export const enabled = true;\r\n');
+  await finish(latest);
+  await post(`/api/previews/${latest.id}/apply`, {}, 200);
+  assert.equal(await fs.readFile(path.join(root, 'app.mjs'), 'utf8'), 'export const enabled = true;\r\n');
+  assert.equal(await fs.readFile(path.join(root, `.spequi/backups/${latest.id}/app.mjs`), 'utf8'), original);
+  await assert.rejects(fs.access(path.join(root, '.spequi/spec-links.json')));
+  console.log(`Package smoke passed: ${packed.name}@${packed.version}; isolated global install; repeated init; GigaCode registration; generated server; all UI assets; session report; creation/review spec quotes; CRLF preview; anchored feedback; CLI agent planning cycle; immutable export; deletion; protected apply with backup.`);
+} finally {
+  if (server && server.exitCode === null) { const exited = once(server, 'exit'); server.kill(); await exited; }
+  await fs.rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+}
