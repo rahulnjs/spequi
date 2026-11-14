@@ -23,39 +23,9 @@ cd /path/to/your-project
 npx spequi@latest init
 ```
 
-Then invoke the registered skill in your agent, or start the server directly:
+## Start with your agent
 
-```bash
-node .spequi/server.mjs
-```
-
-Global install:
-
-```bash
-npm install -g spequi
-spequi init
-spequi start
-```
-
-The browser does not open automatically. Open the printed URL (normally http://127.0.0.1:4310) or use your agent's browser tools.
-Use `--port 4311` to choose another port.
-
-## Run from source
-
-```bash
-git clone https://github.com/rahulnjs/spequi.git
-cd spequi
-npm ci
-
-node bin/spequi.mjs init  --root "/path/to/your-project"
-node bin/spequi.mjs start --root "/path/to/your-project"
-```
-
-This repository does not ship sample OpenSpec plans. An empty project shows setup guidance.
-
-## Attach your agent
-
-Spequi uses **your existing coding agent**. It does not launch a model or need a separate provider API key.
+Open the same project in **your existing coding agent** and invoke the Spequi skill in the agent's input, using its command below. These are agent commands, not terminal commands. Spequi does not launch a model or need a separate provider API key.
 
 | Agent | Invoke after initialization |
 | --- | --- |
@@ -66,7 +36,9 @@ Spequi uses **your existing coding agent**. It does not launch a model or need a
 
 Reload your agent if newly generated commands or skills do not appear.
 
-The skill starts the local server and consumes queued requests. Without an attached agent, planning and implementation
+The skill starts the local server, shares its URL, and consumes queued requests. Open the URL it provides, normally **http://127.0.0.1:4310**, or use your agent's browser tools. Browser opening is not automatic. Keep the agent session running while using the workspace.
+
+Without an attached agent, planning and implementation
 requests wait in the queue and everything else keeps working. Closing the agent pauses consumption and leaves requests saved.
 
 Each job runs the matching installed OpenSpec workflow in the same agent session:
@@ -81,10 +53,10 @@ Each job runs the matching installed OpenSpec workflow in the same agent session
 Exploration and verification use their corresponding workflows when available, with read-only fallbacks. Impact reports run directly.
 Missing required workflows fail the job with an explanation; they are never installed automatically.
 
-After upgrading Spequi, refresh an initialized project's skill:
+To upgrade an initialized project, refresh its managed launchers and skill, then invoke the skill again:
 
 ```bash
-node .spequi/cli.mjs skill install
+npx spequi@latest init
 ```
 
 ### GigaCode notes
@@ -92,6 +64,31 @@ node .spequi/cli.mjs skill install
 GigaCode uses monitored Shell calls with `is_background: true` for the server and five-minute `agent wait` calls.
 Background completion must resume the host session for unattended idle attachment to work. The skill includes a check and
 a foreground fallback. Registration is tested; continuous polling in a real GigaCode session is not yet verified.
+
+## Other installation options
+
+### Global installation
+
+```bash
+npm install -g spequi
+cd /path/to/your-project
+spequi init
+```
+
+Then [invoke the Spequi skill in your agent](#start-with-your-agent).
+
+### Run from source
+
+```bash
+git clone https://github.com/rahulnjs/spequi.git
+cd spequi
+npm ci
+
+node bin/spequi.mjs init --root "/path/to/your-project"
+```
+
+Open the target project in your coding agent and invoke the Spequi skill to start the workspace.
+This repository does not ship sample OpenSpec plans. An empty project shows setup guidance.
 
 ## What initialization creates
 

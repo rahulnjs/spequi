@@ -14,16 +14,16 @@ schema-ready artifact. Planning never starts implementation automatically.
 Ideas save under **Drafts** in the left panel. Return there to resume or delete a draft. Deleting a draft can also remove
 its generated planning files, after confirmation.
 
-## Build tabs
+## Planning stages
 
-New specs and unfinished drafts show three tabs in the header: **Shape spec**, **Implement**, **Validate & archive**.
-Existing changes open the same **Build** workspace from the left panel.
+New specs and unfinished drafts show three stages in the header: **Shape spec**, **Implement**, **Validate & archive**.
+Existing changes open in document review from the left panel. Continue a draft or open a planning request from **Requests** to return to its planning workspace.
 
 ### Shape spec
 
 - Select a planning artifact tab and use **Revise spec** to request an update, or **Ask a question** for a read-only exploration.
 - Changes appear as highlighted sections with a document summary. Highlights begin with revisions to existing text.
-- Capabilities with several documents show file tabs below their artifact tab.
+- Artifacts with several documents use a dropdown showing each file's relative path and a description from its content.
 - **Planning actions** offers the next artifact or the full plan.
 - Documents are read-only in the viewer.
 
@@ -48,7 +48,9 @@ prove the implementation is correct.
 
 ## Commands
 
-The **Commands** picker and slash commands in the planning workspace use the same guarded operations:
+The **Commands** picker shows the next executable command and previously completed commands. While a request is pending, it shows the request status and a link to the conversation. Dropdowns close when clicking outside or pressing Escape.
+
+The picker and typed slash commands use the same guarded operations. Supported commands are:
 
 | Command | Purpose |
 | --- | --- |
