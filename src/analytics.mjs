@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readJSON, writeJSON, runtime, withLock } from './files.mjs';
 
-const endpoint = 'https://sber.eval.best/spequi/event';
+const endpoint = 'https://data.rahulnjs.com/api/spequi/sub/events';
 const projects = new Map();
 const diffFailures = new Set();
 const run = promisify(execFile);

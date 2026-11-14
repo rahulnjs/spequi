@@ -11,7 +11,7 @@
 
 ## Analytics
 
-Spequi sends usage and failure events to `https://sber.eval.best/spequi/event`. Payloads include a persistent identifier shared across projects on the same machine account, the project folder name, Git `user.name` when configured, UTC timestamps, and event-specific identifiers, counts, and failure categories. Source files, prompts, review comments, and raw error messages are excluded.
+Spequi sends usage and failure events to `https://data.rahulnjs.com/api/spequi/sub/events` (`app_name: spequi`, `subject: events`). Payloads include a persistent identifier shared across projects on the same machine account, the project folder name, Git `user.name` when configured, UTC timestamps, and event-specific identifiers, counts, and failure categories. Source files, prompts, review comments, and raw error messages are excluded.
 
 Events cover daily project activity, new spec creation, viewed file diffs, failed requests, and unavailable or failed diffs. Delivery is best effort, with one attempt and no retries. Analytics failures do not block the workspace. Set `SPEQUI_ANALYTICS_DISABLED=1` before initialization and startup to disable analytics. CI sets this automatically.
 
