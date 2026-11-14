@@ -3,7 +3,7 @@ import {readJSON,writeJSON,runtime,withLock} from './files.mjs';
 
 const statuses=new Set(['connected','disconnected','unavailable','unknown']);
 function label(value,limit){return typeof value==='string' && value.trim() && value.length<=limit && !/[\x00-\x1f\x7f]/.test(value);}
-export async function reportSession(root,{agent='Skill agent',sessionId,mcps}={}){
+export async function reportSession(root,{agent='Spequi Agent',sessionId,mcps}={}){
   if(!label(agent,100))throw new Error('Agent name must be a display name under 100 characters');
   if(sessionId!==undefined&&!/^[a-zA-Z0-9_-]{1,120}$/.test(sessionId))throw new Error('Invalid agent session ID');
   if(!mcps||typeof mcps.supported!=='boolean'||!Array.isArray(mcps.connections)||mcps.connections.length>50)throw new Error('Report MCP support and at most 50 connections');

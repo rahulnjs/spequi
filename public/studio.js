@@ -135,9 +135,6 @@
     const narrow = window.matchMedia?.('(max-width:760px)').matches || document.querySelector('.studio-mobile-panes')?.offsetHeight > 0;
     if (narrow && (active.closest('.studio-canvas') && studio.dataset.pane === 'conversation' || active.closest('.studio-conversation') && studio.dataset.pane === 'document')) studio.querySelector(`[data-studio-pane="${studio.dataset.pane}"]`)?.focus();
   });
-  document.addEventListener('keydown', event => {
-    if (event.key === 'Escape') { const picker = document.getElementById('studio-command-picker'); if (picker?.open) { picker.open = false; picker.querySelector('summary')?.focus(); } }
-  });
   document.addEventListener('click', event => {
     const button = event.target.closest('[data-studio-pane]'), studio = document.getElementById('studio');
     if (button && studio) {
@@ -155,7 +152,6 @@
         message.value = command.dataset.studioInsertCommand;
         message.dispatchEvent(new window.Event('input', {bubbles:true}));
         message.focus();
-        const picker = studio.querySelector('#studio-command-picker'); if(picker) picker.open = false;
       }
       return;
     }

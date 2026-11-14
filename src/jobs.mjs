@@ -9,6 +9,7 @@ import { reviewScope, feedbackExport } from './review-store.mjs';
 import { sessionEvidence } from './agent-session.mjs';
 import { localReadiness } from './openspec-cli.mjs';
 import { capturePlan, planningActions } from './studio-plans.mjs';
+import { trackEvent } from './analytics.mjs';
 
 export const actions = ['explore', 'propose', 'preview', 'verify', 'archive', 'impact', 'update-specs', 'create-change', 'start-plan', 'plan-next', 'revise-plan', 'sync-specs'];
 export const pendingStatuses = ['queued', 'running', 'awaiting-input'];
@@ -30,7 +31,11 @@ const jobPath = (root, id) => runtime(root, 'jobs', `${safeID(id)}.json`);
 const changes = new EventEmitter();
 changes.setMaxListeners(0);
 export async function writeJob(root, job) {
+  const previous = job.status === 'failed' ? await readJSON(jobPath(root, job.id)).catch(() => null) : null;
   await writeJSON(jobPath(root, job.id), job);
+  if (job.status === 'failed' && previous?.status !== 'failed') {
+    trackEvent(root, 'request_failed', { request_id: job.id, action: job.action, source: job.origin || 'agent', failure_stage: previous?.preparing ? 'preparation' : 'execution' });
+  }
   changes.emit(await fs.realpath(root), job.id);
 }
 // A server-owned read model: progress reads one changed job, never the full history.
@@ -133,7 +138,7 @@ function instructions(job) {
   }[job.action];
   return `${context}\n\n${routing}\n\n${workflow}\n\n${job.archiveOverride ? 'The user requested an archive exception for incomplete work. Preserve normal checks and in-app confirmations; do not skip them.\n\n' : ''}${job.action === 'preview' ? 'Resolve OpenSpec context, status, artifact paths, and allowed edit roots again from workingDirectory before invoking the implementation skill. All writes, including task updates and checks, must remain in this isolated copy. If a store pointer or returned edit path targets the original project or another external root, fail this preview and explain the boundary conflict. Do not redirect to the original root or rewrite store configuration to bypass it.\n\n' : ''}${request}\n\nUse node .spequi/cli.mjs agent log/finish/fail with this job ID and claimToken from the ORIGINAL project directory. Never apply preview files to that original directory yourself.`;
 }
-export async function heartbeat(root, agent = 'Skill agent', sessionId, { polling = false, pollId } = {}) {
+export async function heartbeat(root, agent = 'Spequi Agent', sessionId, { polling = false, pollId } = {}) {
   if (sessionId !== undefined && !/^[a-zA-Z0-9_-]{1,120}$/.test(sessionId)) throw new Error('Invalid agent session ID');
   const previous = await readJSON(runtime(root, 'agent.json'));
   const matching = previous?.agent === agent && (!sessionId || previous.sessionId === sessionId);
@@ -169,7 +174,7 @@ export async function agentStatus(root, { jobs } = {}) {
   const result = { ...state, connected, ready, status, queue };
   return { ...result, mcps: await sessionEvidence(root, result) };
 }
-export async function claimNext(root, agent = 'Skill agent', sessionId) {
+export async function claimNext(root, agent = 'Spequi Agent', sessionId) {
   await heartbeat(root, agent, sessionId, { polling: true });
   const job = await withLock(runtime(root, 'queue.lock'), async () => {
     const jobs = await listJobs(root);
@@ -258,6 +263,7 @@ export async function updateJob(root, id, token, operation, message) {
     job.logs.push({ at: job.updatedAt, message: String(message || operation).slice(0, 12000) });
     job.logs = job.logs.slice(-200);
     await writeJob(root, job);
+    if (operation === 'finish' && job.action === 'start-plan') trackEvent(root, 'spec_created', { spec_id: job.id });
     return job;
   });
 }

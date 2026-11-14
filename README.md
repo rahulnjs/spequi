@@ -20,7 +20,7 @@ Start with **New spec** to shape an idea with your agent. Ideas save automatical
 
 Select an existing change to read documents, inspect proposed code, and leave feedback. Its **Build** tab provides spec refinement, implementation preview, validation, and archive. New specs and existing changes use the same planning workspace, retained previews, and conversation. Applying reviewed files always requires explicit confirmation.
 
-Open **Requests** in the header to inspect the queue and history, filter by status, cancel pending work, retry supported failed requests, or delete a finished request with its associated preview and review data. Active work stays visible while you browse another spec. Partially edited planning work must be reviewed before continuing.
+Open **Requests** in the header for an inbox grouped by spec. Questions, failures, and stalled work appear first, followed by running and queued work. The badge counts specs needing attention. A collapsed **Recent** section holds the latest five completed specs; cancelled and older work stays in **All history**, with status filters and pagination. **Dismiss** clears settled items from the inbox while preserving requests, previews, and comments. Cancel and supported retry actions remain available; destructive deletion is confined to history. Active work stays visible while you browse another spec. Partially edited planning work must be reviewed before continuing.
 
 ![An unfinished spec in Drafts, with its planning document beside the retained conversation.](https://raw.githubusercontent.com/rahulnjs/spequi/master/docs/screenshots/build-light.png)
 
@@ -267,7 +267,7 @@ The header's agent indicator reflects a recent agent heartbeat, independently of
 The agent can write a credential-free report under `.spequi`, then run:
 
 ```sh
-node .spequi/cli.mjs agent report --file .spequi/session-report.json --name "Skill agent"
+node .spequi/cli.mjs agent report --file .spequi/session-report.json --name "Spequi Agent"
 ```
 
 For example, when the host provides authoritative connection status:

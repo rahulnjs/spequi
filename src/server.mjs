@@ -21,9 +21,10 @@ import { answerJob, askJob, jobInput } from './job-dialogue.mjs';
 import { reportSession } from './agent-session.mjs';
 import { createWorkspaceState } from './workspace-state.mjs';
 import { listDrafts, saveDraft, deleteDraft, resumeDraft, finishDrafts } from './drafts.mjs';
-import { requestPage, deleteRequest, retryRequest } from './requests.mjs';
+import { requestPage, deleteRequest, retryRequest, dismissRequest, inboxState } from './requests.mjs';
 import { viewerVersion } from './project.mjs';
 import { conversation } from './studio-view.mjs';
+import { initializeAnalytics, trackEvent } from './analytics.mjs';
 
 const require = createRequire(import.meta.url);
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
@@ -38,6 +39,7 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
   root = await fs.realpath(root);
   if (!await exists(runtime(root, 'config.json'))) throw new Error('Run spequi init in this project first');
   const config = await readJSON(runtime(root, 'config.json'));
+  await initializeAnalytics(root);
   const selectedPort = port ?? config.port ?? 4310;
   if (!Number.isInteger(selectedPort) || selectedPort < 0 || selectedPort > 65535) throw new Error('Port must be an integer from 0 to 65535');
   const releaseServer = await acquireLock(runtime(root, 'server.lock'), { waitMs: 0 });
@@ -63,7 +65,7 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
       if (request.method === 'POST' && url.pathname.startsWith('/api/agent/')) {
         if (request.headers.origin || !tokenMatches(request.headers.authorization, `Bearer ${agentToken}`)) return send(response, 403, JSON.stringify({ error: 'Project agent authentication failed' }), 'application/json');
         const payload = await body(request), operation = url.pathname.slice('/api/agent/'.length);
-        const name = payload.name || 'Skill agent', sessionId = payload.sessionId;
+        const name = payload.name || 'Spequi Agent', sessionId = payload.sessionId;
         if (typeof name !== 'string' || !name.trim() || name.length > 100) throw new Error('Invalid agent display name');
         let result;
         if (['next', 'wait'].includes(operation)) {
@@ -124,8 +126,10 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
         }
         if (url.pathname === '/api/agent-status') return send(response, 200, JSON.stringify(await agentStatus(root, { jobs: await jobReader.read() })), 'application/json');
         if (url.pathname === '/api/requests') {
-          const result = requestPage(await jobReader.read(), Object.fromEntries(url.searchParams));
-          return send(response, 200, JSON.stringify({ ...result, items: result.items.map(({ claimToken, instructions, workflow, workingDirectory, ...job }) => job) }), 'application/json');
+          const jobs = await jobReader.read(), agent = await agentStatus(root, { jobs });
+          const result = requestPage(jobs, Object.fromEntries(url.searchParams), { agent, dismissed: await inboxState(root) });
+          const expose = ({ claimToken, instructions, workflow, workingDirectory, ...job }) => job;
+          return send(response, 200, JSON.stringify({ ...result, items: result.items.map(expose), recent: result.recent?.map(expose) }), 'application/json');
         }
         if (url.pathname === '/api/activity') {
           const [jobs, drafts] = await Promise.all([jobReader.read(), listDrafts(root)]);
@@ -134,7 +138,8 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
           const agent = await agentStatus(root, { jobs }), selected = validChange ? { id: change, archived: /^\d{4}-\d{2}-\d{2}-/.test(change) && !await exists(path.join(root, 'openspec', 'changes', change)) } : null;
           const relevant = jobs.filter(job => !job.hiddenAt && (selected && jobMatchesChange(job, selected) || job.id === url.searchParams.get('creation')));
           const draftStates = await Promise.all(drafts.map(async draft => ({ id: draft.id, change: draft.change, creationId: draft.creationId, status: jobs.find(job => job.id === draft.creationId)?.status, hasPlan: Boolean(draft.creationId && /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(draft.change) && await exists(path.join(root, 'openspec', 'changes', draft.change))) })));
-          return send(response, 200, JSON.stringify({ agent, revision: JSON.stringify(relevant.map(job => [job.id, job.status])), thread: conversation(relevant, agent), drafts: draftStates, active: jobs.filter(job => pendingStatuses.includes(job.status)).map(job => ({ id: job.id, change: job.change, status: job.status })) }), 'application/json');
+          const inbox = requestPage(jobs, {}, { agent, dismissed: await inboxState(root) });
+          return send(response, 200, JSON.stringify({ agent, attention: inbox.attention, inboxCount: inbox.total, revision: JSON.stringify(relevant.map(job => [job.id, job.status])), thread: conversation(relevant, agent), drafts: draftStates, active: jobs.filter(job => pendingStatuses.includes(job.status)).map(job => ({ id: job.id, change: job.change, status: job.status })) }), 'application/json');
         }
         const feedbackMatch = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/feedback\/([a-zA-Z0-9_-]+)$/);
         if (feedbackMatch) {
@@ -158,6 +163,13 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
       if (request.method !== 'POST') return send(response, 405, 'Method not allowed');
       if (![origin, `http://localhost:${server.address().port}`].includes(request.headers.origin) || !tokenMatches(request.headers['x-csrf-token'], csrf)) return send(response, 403, '<p class="error-message">Local session verification failed. Reload the viewer and retry.</p>');
       const payload = await body(request, url.pathname.startsWith('/api/source-preview/') ? 2 * 1024 * 1024 : 100000);
+      if (url.pathname === '/api/analytics') {
+        if (payload.event === 'project_used') trackEvent(root, 'project_used');
+        else if (payload.event === 'file_diff_viewed' && /^[a-zA-Z0-9_-]{1,100}$/.test(payload.preview_id || '') && Number.isInteger(payload.changed_file_count) && payload.changed_file_count > 0 && ['unified', 'split'].includes(payload.layout)) {
+          trackEvent(root, 'file_diff_viewed', { preview_id: payload.preview_id, changed_file_count: payload.changed_file_count, layout: payload.layout });
+        } else return send(response, 400, '', 'application/json');
+        return send(response, 204, '');
+      }
       if (url.pathname === '/api/drafts') return send(response, 200, JSON.stringify({ draft: await saveDraft(root, payload) }), 'application/json');
       const draftResume = url.pathname.match(/^\/api\/drafts\/([a-zA-Z0-9_-]+)\/resume$/);
       if (draftResume) return send(response, 200, JSON.stringify(await resumeDraft(root, draftResume[1])), 'application/json');
@@ -166,10 +178,11 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
         const result = await deleteDraft(root, draftDelete[1], payload); state.invalidate();
         return send(response, 200, JSON.stringify(result), 'application/json');
       }
-      const requestAction = url.pathname.match(/^\/api\/jobs\/([a-zA-Z0-9_-]+)\/(delete|retry)$/);
+      const requestAction = url.pathname.match(/^\/api\/jobs\/([a-zA-Z0-9_-]+)\/(delete|retry|dismiss)$/);
       if (requestAction) {
-        const result = requestAction[2] === 'delete' ? await deleteRequest(root, requestAction[1], payload) : { job: await retryRequest(root, requestAction[1]) };
+        const result = requestAction[2] === 'dismiss' ? await dismissRequest(root, requestAction[1], payload) : requestAction[2] === 'delete' ? await deleteRequest(root, requestAction[1], payload) : { job: await retryRequest(root, requestAction[1]) };
         jobReader.invalidate(requestAction[1]);
+        broadcast('requests');
         return send(response, 200, JSON.stringify(result), 'application/json');
       }
       if (['/api/lifecycle/actions', '/api/lifecycle/command'].includes(url.pathname)) {

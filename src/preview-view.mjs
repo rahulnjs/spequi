@@ -3,12 +3,23 @@ import { previewResult } from './previews.mjs';
 import { renderFileDiff } from './diff-view.mjs';
 import { listComments } from './review-store.mjs';
 import { previewPlanChanged } from './lifecycle.mjs';
+import { trackDiffFailure } from './analytics.mjs';
 
 export async function getPreviewContext(root, params, jobs, selected) {
   const matching = jobs.filter(job => job.action === 'preview' && (!selected || jobMatchesChange(job, selected)));
   const previews = matching.filter(job => job.status === 'completed');
   const job = previews.find(job => job.id === params.job) || previews[0];
-  const result = job ? await previewResult(root, job.id) : null;
+  const diffRequested = params.view === 'preview' || params.view === 'studio' && params.stage === 'implement';
+  let result = null;
+  try { result = job ? await previewResult(root, job.id) : null; }
+  catch (error) {
+    if (job && diffRequested) trackDiffFailure(root, job.id, 'unreadable_result');
+    throw error;
+  }
+  if (job && diffRequested) {
+    const reason = !result ? 'missing_result' : !Array.isArray(result.changes) ? 'invalid_result' : !result.changes.length && result.unsupported?.length ? 'unsupported_files' : !result.changes.length && !changeState(selected).complete ? 'empty_result' : null;
+    if (reason) trackDiffFailure(root, job.id, reason);
+  }
   return {
     previews, job, result, comments: job && result ? await listComments(root, job.id) : [],
     file: result?.changes.find(change => change.file === params.file) || result?.changes[0],
@@ -62,13 +73,15 @@ export async function renderPreview({ root, params, selected, agent, context, co
   if (!job) {
     if (!pending && changeState(selected).complete) return completedEmpty(selected, { icon, link, empty }, false, failure) + '<div id="preview-feedback" role="status" aria-live="polite"></div>';
     const title = pending?.status === 'awaiting-input' ? 'Your agent needs your input.' : pending ? pending.origin ? 'Preparing proposed file changes.' : pending.status === 'running' ? 'Your agent is generating the file diff.' : 'File diff queued.' : 'No implementation diff yet.';
-    const description = pending?.status === 'awaiting-input' ? 'Open Build to answer the current question and resume this preview.' : pending ? pending.origin ? 'The proposed edits are being staged in a separate project copy. Your project stays unchanged.' : pending.status === 'running' ? 'The agent is implementing this change in a separate project copy. The before-and-after file diff will appear here when it finishes.' : 'This request is waiting for an agent running the viewer skill. Attach your agent to continue.' : 'Open Build to analyze affected files, import a patch, generate with a model, or request an implementation from your attached agent.';
-    const progress = pending ? `<div class="diff-generation-status"><span class="badge ${pending.status === 'running' ? 'blue' : ''}">${e(pending.status)}</span>${pending.logs.slice(-3).map(log => `<p>${e(log.message)}</p>`).join('')}</div>` : '';
-    const attach = !agent.connected && selected && !selected.archived ? '<p class="diff-attach-hint">Attach your existing agent with <code>$spequi</code> in Codex or <code>/spequi</code> in Claude Code.</p>' : '';
+    const description = pending?.status === 'awaiting-input' ? 'Answer the question in Build to continue this preview.' : pending ? pending.origin ? 'Proposed changes are being prepared in a separate project copy.' : pending.status === 'running' ? 'The file comparison will appear here when the preview is ready.' : 'Your agent will pick up this request when available.' : selected?.archived ? 'No file preview was saved for this archived change.' : 'Generate an implementation preview, then review its proposed file changes here.';
+    const progress = pending ? `<div class="diff-generation-status" role="status"><span class="badge ${pending.status === 'running' ? 'blue' : ''}">${e({ queued: 'Queued', running: 'Working', 'awaiting-input': 'Answer needed' }[pending.status] || pending.status)}</span>${pending.logs.slice(-1).map(log => `<p>${e(log.message)}</p>`).join('')}</div>` : '';
+    const attach = !pending && !agent.connected && selected && !selected.archived ? '<p class="diff-agent-note">No agent connected. Preview requests will wait in the queue.</p>' : '';
     const error = failure ? `<p class="error-message">Previous attempt failed: ${e(failure.result || 'Retry with your agent attached.')}</p>` : '';
-    return `<div class="diff-empty-state">${empty(title, description, 'git', `${selected ? link('Open Build', { change: selected.id, view: 'studio' }, 'button') : ''}${generateForm(selected, pending, icon)}<div id="preview-feedback" role="status" aria-live="polite"></div>${attach}${progress}${error}`)}</div>`;
+    const build = selected ? link(pending?.status === 'awaiting-input' ? 'Reply in Build' : pending ? 'View progress in Build' : 'Open Build', { change: selected.id, view: 'studio', stage: 'implement', ...(pending ? { pane: 'conversation' } : {}) }, `button ${pending || selected.archived ? 'primary' : ''}`) : '';
+    const actions = `<div class="diff-empty-actions">${pending ? '' : generateForm(selected, null, icon)}${build}</div>`;
+    return `<div class="diff-empty-state">${empty(title, description, 'git', `${actions}${attach}${progress}${error}<div id="preview-feedback" role="status" aria-live="polite"></div>`)}</div>`;
   }
-  if (!result) return empty('Preview files unavailable', 'The retained result may have been removed. Generate a fresh preview.');
+  if (!result) return `<div class="diff-empty-state">${empty('Preview files unavailable', 'Open Build to generate a fresh implementation preview.', 'git', `<div class="diff-empty-actions">${selected ? link('Open Build', { change: selected.id, view: 'studio', stage: 'implement' }, 'button primary') : ''}</div>`)}</div>`;
   const fileDiff = file ? await renderFileDiff({ root, job, file, result, selected, params, compact, comments: context.comments }, { icon, link, badge }) : '';
   const additions = result.changes.reduce((total, change) => total + change.additions, 0);
   const deletions = result.changes.reduce((total, change) => total + change.deletions, 0);

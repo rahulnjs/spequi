@@ -228,20 +228,42 @@ test('split comparisons keep unchanged lines aligned after uneven edits', () => 
   assert.deepEqual(buildDiffRows('', ''), { unified: [], split: [] });
 });
 
-test('file diff generation displays queued and running requests in the primary view', async t => {
+test('file diff generation displays progress and routes questions directly to implementation', async t => {
   const root = await fixture(t), viewer = await startServer({ root, port: 0, quiet: true });
   t.after(() => viewer.close());
   await enqueue(root, { action: 'preview', change: 'add-feature' });
   const queued = await (await fetch(viewer.origin + '/?view=preview')).text();
   assert.match(queued, /File diff queued/);
-  assert.match(queued, /id="generate-file-diff" disabled/);
+  assert.doesNotMatch(queued, /id="generate-file-diff"/);
+  const progress = parseHTML(queued).document.querySelector('.diff-empty-actions a');
+  assert.equal(new URL(progress.getAttribute('href'), viewer.origin).searchParams.get('stage'), 'implement');
   const job = await claimNext(root, 'Fixture agent');
   const running = await (await fetch(viewer.origin + '/?view=preview')).text();
   assert.match(running, /Your agent is generating the file diff/);
+  const { askJob } = await import('../src/job-dialogue.mjs');
+  await askJob(root, job.id, job.claimToken, { message: 'Which behavior should change?' });
+  const waiting = parseHTML(await (await fetch(viewer.origin + '/?view=preview')).text()).document;
+  const reply = waiting.querySelector('.diff-empty-actions a');
+  assert.equal(reply.textContent, 'Reply in Build');
+  assert.equal(new URL(reply.getAttribute('href'), viewer.origin).searchParams.get('pane'), 'conversation');
+  assert.equal(waiting.querySelector('#generate-file-diff'), null);
   await updateJob(root, job.id, job.claimToken, 'fail', 'A useful failure');
   const failed = await (await fetch(viewer.origin + '/?view=preview')).text();
   assert.match(failed, /A useful failure/);
   assert.match(failed, /Generate file diff/);
+});
+
+test('Files empty state uses neutral copy and distinct generation and implementation actions', async t => {
+  const root = await fixture(t), viewer = await startServer({ root, port: 0, quiet: true }); t.after(() => viewer.close());
+  const document = parseHTML(await (await fetch(viewer.origin + '/?change=add-feature&view=preview')).text()).document;
+  const state = document.querySelector('.diff-empty-state');
+  assert.doesNotMatch(state.textContent, /Codex|Claude|\$spequi|\/spequi/);
+  assert.match(state.querySelector('.diff-agent-note').textContent, /requests will wait in the queue/);
+  assert.equal(state.querySelector('.diff-empty-actions form [name=change]').value, 'add-feature');
+  assert.equal(state.querySelector('.diff-empty-actions form [name=action]').value, 'preview');
+  const destination = new URL(state.querySelector('.diff-empty-actions a').getAttribute('href'), viewer.origin);
+  assert.equal(destination.searchParams.get('view'), 'studio');
+  assert.equal(destination.searchParams.get('stage'), 'implement');
 });
 
 test('review selects retained preview versions and changed files without mixing snapshots', async t => {

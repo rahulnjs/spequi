@@ -1,4 +1,62 @@
 (() => {
+  const dropdownTriggers = panel => [...document.querySelectorAll('[aria-controls]')].filter(button => button.getAttribute('aria-controls') === panel.id);
+  function closeDropdowns(target = null, restoreFocus = false) {
+    for (const detail of document.querySelectorAll('details[data-dropdown][open]')) {
+      if (target && detail.contains(target)) continue;
+      detail.open = false;
+      if (restoreFocus && detail.contains(document.activeElement)) detail.querySelector('summary')?.focus();
+    }
+    for (const panel of document.querySelectorAll('.session-panel:not([hidden]), #requests-panel:not([hidden]), [data-dropdown-panel]:popover-open')) {
+      const triggers = dropdownTriggers(panel);
+      if (target && (panel.contains(target) || triggers.some(button => button.contains(target)))) continue;
+      if (restoreFocus && panel.contains(document.activeElement)) triggers[0]?.focus();
+      if (panel.hasAttribute('popover')) panel.hidePopover(); else panel.hidden = true;
+      for (const button of triggers) button.setAttribute('aria-expanded', 'false');
+    }
+  }
+  document.addEventListener('pointerdown', event => closeDropdowns(event.target), true);
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') closeDropdowns(null, true); }, true);
+  function positionDropdown(panel) {
+    const trigger = dropdownTriggers(panel)[0];
+    if (!trigger) return;
+    const anchor = trigger.getBoundingClientRect(), width = Math.min(Number(panel.dataset.dropdownWidth) || 380, window.innerWidth - 24);
+    const below = window.innerHeight - anchor.bottom - 20, above = anchor.top - 20;
+    const opensBelow = below >= Math.min(220, Math.max(below, above));
+    panel.style.left = `${Math.max(12, Math.min(anchor.right - width, window.innerWidth - width - 12))}px`;
+    panel.style.top = opensBelow ? `${anchor.bottom + 8}px` : 'auto';
+    panel.style.bottom = opensBelow ? 'auto' : `${window.innerHeight - anchor.top + 8}px`;
+    panel.style.maxHeight = `${Math.max(0, Math.min(420, opensBelow ? below : above))}px`;
+  }
+  document.addEventListener('beforetoggle', event => {
+    if (!event.target.matches('[data-dropdown-panel]')) return;
+    const open = event.newState === 'open';
+    for (const trigger of dropdownTriggers(event.target)) trigger.setAttribute('aria-expanded', String(open));
+    if (open) { closeDropdowns(event.target); positionDropdown(event.target); }
+  }, true);
+  document.addEventListener('click', event => {
+    const panel = event.target.closest('[data-dropdown-choice]')?.closest('[data-dropdown-panel]');
+    if (panel?.matches(':popover-open')) panel.hidePopover();
+  }, true);
+  window.addEventListener('resize', () => { for (const panel of document.querySelectorAll('[data-dropdown-panel]:popover-open')) positionDropdown(panel); });
+  let analyticsDay;
+  const viewedPreviews = new Set();
+  function recordUsage() {
+    if (document.visibilityState !== 'visible') return;
+    const send = payload => {
+      void fetch('/api/analytics', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content }, body: JSON.stringify(payload), signal: AbortSignal.timeout(5000) }).catch(() => {});
+    };
+    const day = new Date().toISOString().slice(0, 10);
+    if (analyticsDay !== day) { analyticsDay = day; send({ event: 'project_used' }); }
+    const diff = document.querySelector('[data-diff-preview]');
+    if (!diff?.getClientRects().length) return;
+    const preview = diff.dataset.diffPreview, key = `spequi-diff-viewed:${preview}`;
+    if (viewedPreviews.has(preview)) return;
+    viewedPreviews.add(preview);
+    try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); } catch {}
+    send({ event: 'file_diff_viewed', preview_id: preview, changed_file_count: Number(diff.dataset.diffCount), layout: diff.dataset.diffLayout });
+  }
+  for (const event of ['htmx:afterSettle', 'visibilitychange', 'click', 'keydown']) document.addEventListener(event, () => requestAnimationFrame(recordUsage));
+  requestAnimationFrame(recordUsage);
   const themeToggle = document.getElementById('theme-toggle');
   function applyTheme(theme) {
     const dark = theme === 'dark' || theme === 'developer';
@@ -246,14 +304,13 @@
   window.spequiRefreshAgent = updateAgent;
   function connect() {
     const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/live`);
-    const status = document.getElementById('connection');
     socket.addEventListener('open', () => {
-      retry = 1000; status.textContent = 'Local workspace'; status.classList.add('online');
+      retry = 1000;
       if (hasConnected) { pendingRefresh = true; refresh(); }
       hasConnected = true;
     });
     socket.addEventListener('message', event => { try { const message = JSON.parse(event.data); if (message.type === 'changed' && (!message.change || message.change === document.getElementById('workspace')?.dataset.change)) refresh(); if (message.type === 'requests') document.dispatchEvent(new window.CustomEvent('requests-updated')); if (message.type === 'readiness' && message.change === document.getElementById('workspace')?.dataset.change) refresh(); if (['agent', 'heartbeat', 'connected'].includes(message.type)) updateAgent(); } catch {} });
-    socket.addEventListener('close', () => { status.textContent = 'Reconnecting to server'; status.classList.remove('online'); setTimeout(connect, retry); retry = Math.min(retry * 2, 15000); });
+    socket.addEventListener('close', () => { setTimeout(connect, retry); retry = Math.min(retry * 2, 15000); });
     socket.addEventListener('error', () => socket.close());
   }
   function loadHTMX() {

@@ -5,6 +5,7 @@ import { createTwoFilesPatch } from 'diff';
 import { compareLines, lineEndingStyle } from './diffs.mjs';
 import { captureSpecLinks } from './spec-context.mjs';
 import { walk, within, runtime, safeID, exists, writeJSON, readJSON, withLock } from './files.mjs';
+import { trackDiffFailure } from './analytics.mjs';
 
 const ignoredDirs = new Set(['.git', '.spequi', '.openspec-ui', '.change-viewer', 'node_modules', 'dist', 'build', '.next', '.nuxt', '.cache', '.turbo', 'coverage', '.venv', 'venv', '__pycache__', '.impeccable']);
 export function eligible(relative) {
@@ -58,9 +59,12 @@ export async function freezePreview(root, id) {
 export async function previewResult(root, id) { return readJSON(path.join(basePath(root, id), 'result.json')); }
 export async function previewContents(root, id, file) {
   const result = await previewResult(root, id);
-  if (!result?.changes.some(change => change.file === file)) throw new Error('File is not part of this preview');
+  const change = result?.changes.find(change => change.file === file);
+  if (!change) throw new Error('File is not part of this preview');
   const dir = basePath(root, id);
-  return { before: (await getBuffer(path.join(dir, 'baseline'), file))?.toString('utf8') || '', after: (await getBuffer(path.join(dir, 'proposed'), file))?.toString('utf8') || '' };
+  const before = await getBuffer(path.join(dir, 'baseline'), file), after = await getBuffer(path.join(dir, 'proposed'), file);
+  if (change.beforeHash && before === null || change.afterHash && after === null) trackDiffFailure(root, id, 'missing_snapshot');
+  return { before: before?.toString('utf8') || '', after: after?.toString('utf8') || '' };
 }
 export async function applyPreview(root, id) {
   return withLock(runtime(root, 'apply.lock'), async () => {

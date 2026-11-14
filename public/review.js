@@ -201,7 +201,7 @@
       node.dataset.pendingStatus = 'queued';
       updateMessages.delete(change); exportMessages.delete(preview);
       await refreshComments(preview, '', { change, outcome: 'Planning update queued' });
-      document.dispatchEvent(new window.CustomEvent('spequi-toast', { detail: { message: 'Planning update queued. Your attached agent will process this feedback snapshot.', downloadUrl: exported.downloadUrl } }));
+      document.dispatchEvent(new window.CustomEvent('spequi-toast', { detail: { message: 'Spec update queued for your agent.' } }));
     } catch (error) {
       updateMessages.set(change, { message: error instanceof TypeError ? 'Could not reach the viewer. Check that the server is running and retry Update spec.' : error.message, error: true });
     } finally {

@@ -161,7 +161,7 @@ test('request filters paginate history and preserving review data hides only the
   const root = await fixture(t), job = await enqueue(root, { action: 'explore', change: 'feature' }); await updateJob(root, job.id, null, 'cancel');
   await deleteRequest(root, job.id, { reviewData: false }); assert.ok((await getJob(root, job.id)).hiddenAt); assert.equal(requestPage(await listJobs(root)).total, 0);
   const jobs = Array.from({ length: 45 }, (_, index) => ({ id: String(index), status: index % 2 ? 'completed' : 'queued' }));
-  assert.equal(requestPage(jobs, { status: 'active' }).total, 23); assert.equal(requestPage(jobs, { page: 3 }).items.length, 5);
+  assert.equal(requestPage(jobs, { status: 'active' }).total, 23); assert.equal(requestPage(jobs, { status: 'all', page: 3 }).items.length, 5);
 });
 test('drafts resume saved ideas, bind one planning request, and never delete unrelated planning files', async t => {
   const { parseHTML } = await import('linkedom');

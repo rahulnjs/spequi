@@ -13,7 +13,7 @@ const argv = process.argv.slice(2);
 function option(name, fallback) { const position = argv.indexOf(`--${name}`); return position >= 0 ? argv[position + 1] : fallback; }
 function print(value) { process.stdout.write(JSON.stringify(value, null, 2) + '\n'); }
 const root = path.resolve(option('root', process.cwd()));
-const agentName = () => option('name', 'Skill agent');
+const agentName = () => option('name', 'Spequi Agent');
 function waitSeconds(fallback = 0) {
   const value = Number(option('wait', fallback));
   if (!Number.isFinite(value) || value < 0 || value > 300) throw new Error('Wait must be between 0 and 300 seconds');
@@ -76,5 +76,5 @@ try {
     } else if (subcommand === 'list') print(await agentCall('list', {}, async () => (await listJobs(root)).map(({ claimToken, instructions, ...job }) => job)));
     else throw new Error('Use agent report, wait, next, ask, input, log, finish, fail, or list');
   } else if (command === '--version' || command === '-v') process.stdout.write(viewerVersion + '\n');
-  else process.stdout.write(`spequi\n\n  spequi init [--start]       Scaffold .spequi and install project skills\n  spequi start [--port 4310]  Open the local project workspace\n  spequi skill install --global  Install the skill for future projects\n  spequi agent wait --wait 300   Wait for work without claiming it\n  spequi agent next              Claim when the current agent is ready\n  spequi agent log|finish|fail <id> --token <token> --message "result"\n  spequi agent ask <id> --token <token> --message "question" [--options '["Yes","No"]']\n  spequi agent input <id> --token <token> --wait 300\n  spequi agent report --file <session.json> [--name "Skill agent"]\n  spequi agent list\n\nEvery command accepts --root <project>. No build step or agent API key required.\n`);
+  else process.stdout.write(`spequi\n\n  spequi init [--start]       Scaffold .spequi and install project skills\n  spequi start [--port 4310]  Open the local project workspace\n  spequi skill install --global  Install the skill for future projects\n  spequi agent wait --wait 300   Wait for work without claiming it\n  spequi agent next              Claim when the current agent is ready\n  spequi agent log|finish|fail <id> --token <token> --message "result"\n  spequi agent ask <id> --token <token> --message "question" [--options '["Yes","No"]']\n  spequi agent input <id> --token <token> --wait 300\n  spequi agent report --file <session.json> [--name "Spequi Agent"]\n  spequi agent list\n\nEvery command accepts --root <project>. No build step or agent API key required.\n`);
 } catch (error) { process.stderr.write(`spequi: ${error.message}\n`); process.exitCode = 1; }

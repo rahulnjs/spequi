@@ -210,7 +210,7 @@
 /* Completed work keeps review actions available without implying new work. */
 .change-link.tasks-complete .nav-icon{color:var(--green)}
 .completed-change-state .empty-state>svg{color:var(--green)}
-.completed-change-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+.completed-change-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:20px}
 .completed-diff-option{max-width:46ch;margin-top:24px;font-size:11px;color:var(--muted)}
 .completed-diff-option>summary{cursor:pointer;min-height:32px;padding:7px;color:var(--accent-text)}
 .completed-diff-option>p{margin:6px 0 12px;font-size:11px;line-height:1.7}

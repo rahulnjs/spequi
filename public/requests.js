@@ -1,7 +1,7 @@
 (() => {
   const panel = () => document.getElementById('requests-panel');
   const workspace = () => document.getElementById('workspace');
-  const labels = { queued: 'Queued', running: 'Working', 'awaiting-input': 'Answer needed', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled' };
+  const labels = { stalled: 'Stalled', queued: 'Queued', running: 'Working', 'awaiting-input': 'Answer needed', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled' };
   const actions = { 'start-plan': 'New spec', 'plan-next': 'Next artifact', 'revise-plan': 'Spec revision', preview: 'Implementation preview', verify: 'Verification', explore: 'Question', 'update-specs': 'Review feedback', impact: 'File impact', archive: 'Archive' };
   let page = 1, pages = 1, opener, activityPending, activityAgain = false, agent = {}, listGeneration = 0;
   const saves = new Map(), saved = new Map(), saveFailures = new Map(), deletedDrafts = new Set();
@@ -15,7 +15,7 @@
     const element = document.createElement(tag); if (text !== undefined) element.textContent = text; if (className) element.className = className; return element;
   }
   function requestIcon(name) {
-    const paths = { open: '<path d="M7 17 17 7M7 7h10v10"/>', delete: '<path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6m4-6v6"/>', chevron: '<path d="m9 5 7 7-7 7"/>' };
+    const paths = { open: '<path d="M7 17 17 7M7 7h10v10"/>', delete: '<path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6m4-6v6"/>', dismiss: '<path d="m6 6 12 12M6 18 18 6"/>', chevron: '<path d="m9 5 7 7-7 7"/>' };
     const icon = node('span', undefined, 'request-action-icon'); icon.setAttribute('aria-hidden', 'true');
     icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">${paths[name]}</svg>`;
     return icon;
@@ -33,6 +33,16 @@
     if (panel()) panel().hidden = true;
     for (const toggle of document.querySelectorAll('[data-requests-toggle]')) toggle.setAttribute('aria-expanded', 'false');
   }
+  function positionPanel() {
+    const drawer = panel(), anchor = document.querySelector('.topbar [data-requests-toggle]') || opener;
+    if (!drawer || drawer.hidden || !anchor?.getBoundingClientRect || !window.innerWidth) return;
+    const trigger = anchor.getBoundingClientRect(), header = anchor.closest('.topbar')?.getBoundingClientRect();
+    const gutter = window.innerWidth <= 520 ? 8 : 16, width = drawer.getBoundingClientRect().width;
+    const left = Math.max(gutter, Math.min(trigger.left, window.innerWidth - width - gutter));
+    const top = Math.max(gutter, Math.max(trigger.bottom, header?.bottom || 0) + 8);
+    drawer.style.left = `${Math.round(left)}px`; drawer.style.right = 'auto'; drawer.style.top = `${Math.round(top)}px`;
+    drawer.style.maxHeight = `${Math.max(0, Math.min(640, window.innerHeight - top - gutter))}px`;
+  }
   function openLink(job) {
     const stage = ['preview', 'impact'].includes(job.action) ? 'implement' : ['verify', 'sync-specs', 'archive'].includes(job.action) ? 'finish' : 'shape';
     const query = job.action === 'start-plan' ? { view: 'studio', new: '1', creation: job.id } : {
@@ -46,12 +56,14 @@
     link.append(requestIcon('open')); link.href = '/?' + new URLSearchParams(query); return link;
   }
   function button(text, action, id) {
-    const control = node('button', action === 'delete' ? undefined : text, action === 'delete' ? 'button request-delete' : 'button');
-    if (action === 'delete') { control.append(requestIcon('delete')); control.setAttribute('aria-label', 'Delete request'); control.title = 'Delete request'; }
+    const iconAction = ['delete', 'dismiss'].includes(action);
+    const control = node('button', iconAction ? undefined : text, iconAction ? `button request-${action}` : 'button');
+    if (iconAction) { const label = action === 'dismiss' ? 'Dismiss from inbox' : 'Delete request'; control.append(requestIcon(action)); control.setAttribute('aria-label', label); control.title = label; }
     control.type = 'button'; control.dataset.requestAction = action; control.dataset.requestId = id; return control;
   }
-  function emptyRequests(status) {
+  function emptyRequests(status, hasHistory = false) {
     const copy = {
+      inbox: ['You’re all caught up', 'Ongoing work and requests needing your attention appear here.'],
       all: ['No requests yet', 'Start a new spec or work on an existing change. Follow your agent’s progress and reply to questions here.'],
       active: ['No active requests', 'When you send a request, follow its progress and reply to your agent here.'],
       completed: ['No completed requests', 'Requests appear here once your agent finishes the work.'],
@@ -63,12 +75,42 @@
     icon.setAttribute('aria-hidden', 'true');
     icon.innerHTML = '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"/></svg>';
     state.append(icon, node('h3', copy[0]), node('p', copy[1]));
-    const action = node(status === 'all' ? 'a' : 'button', status === 'all' ? 'New spec' : 'Show all requests', 'button');
+    const newSpec = status === 'all' || status === 'inbox' && !hasHistory;
+    const action = node(newSpec ? 'a' : 'button', newSpec ? 'New spec' : 'View history', 'button');
     action.setAttribute('data-request-empty-action', '');
-    if (status === 'all') action.href = '/?view=studio&new=1';
+    if (newSpec) action.href = '/?view=studio&new=1';
     else { action.type = 'button'; action.setAttribute('data-request-show-all', ''); }
     state.append(action);
     return state;
+  }
+  function requestRow(job, history, expanded) {
+    const row = node('section', undefined, 'request-row'), heading = node('div', undefined, 'request-heading');
+    row.dataset.requestId = job.id; row.dataset.requestKey = job.groupKey || job.id;
+    const status = node('span', labels[job.stalled ? 'stalled' : job.status] || job.status, 'request-state'); status.dataset.state = job.stalled ? 'stalled' : job.status;
+    const name = node('strong', job.change || 'Project question'); name.title = name.textContent;
+    heading.append(name);
+    if (job.groupCount > 1) heading.append(node('small', `${job.groupCount} actions`, 'request-group-count'));
+    heading.append(status);
+    row.append(heading);
+    const detail = node('details'); detail.open = expanded.has(job.groupKey || job.id);
+    const summary = node('summary'); summary.append(node('span', job.message || 'View request details', 'request-summary-text'), requestIcon('chevron')); detail.append(summary);
+    const body = node('div', undefined, 'request-detail-body'), log = node('ol');
+    for (const item of job.logs?.slice(-30) || []) log.append(node('li', item.message));
+    if (log.children.length) body.append(node('h3', 'Activity'), log);
+    if (job.result) body.append(node('h3', 'Result'), node('p', job.result, 'request-result'));
+    detail.append(body); row.append(detail);
+    const footer = node('div', undefined, 'request-footer'), meta = node('div', undefined, 'request-meta');
+    const kind = node('span', actions[job.action] || job.action, 'request-kind'); kind.title = kind.textContent;
+    meta.append(kind, requestTime(job.updatedAt));
+    const controls = node('div', undefined, 'request-controls'); controls.append(openLink(job));
+    if (['queued', 'awaiting-input'].includes(job.status) || job.status === 'running' && !job.origin && agent.queue?.active?.id === job.id && !agent.queue.active.ownerConnected) controls.append(button(job.status === 'running' ? 'End stalled request' : 'Cancel request', 'cancel', job.id));
+    if (['failed', 'cancelled'].includes(job.status) && ['explore', 'preview', 'verify', 'impact'].includes(job.action)) controls.append(button('Retry', 'retry', job.id));
+    if (!['queued', 'running', 'awaiting-input'].includes(job.status)) {
+      const control = button(history ? 'Delete…' : 'Dismiss', history ? 'delete' : 'dismiss', job.id);
+      if (!history) control.dataset.requestThrough = job.dismissThrough || job.updatedAt;
+      controls.append(control);
+    }
+    footer.append(meta, controls); row.append(footer); return row;
   }
   async function loadRequests() {
     if (!panel() || panel().hidden) return;
@@ -82,41 +124,36 @@
       if (generation !== listGeneration) return;
       page = result.page; pages = result.pages;
       const scroll = list.scrollTop;
-      const expanded = new Set([...list.querySelectorAll('.request-row details[open]')].map(detail => detail.closest('.request-row').dataset.requestId));
+      const recentOpen = list.querySelector('#requests-recent')?.open || false;
+      const expanded = new Set([...list.querySelectorAll('.request-row details[open]')].map(detail => detail.closest('.request-row').dataset.requestKey));
       const focused = list.contains(document.activeElement) ? document.activeElement : null;
-      const focus = focused ? { id: focused.closest('.request-row')?.dataset.requestId, action: focused.dataset.requestAction, tag: focused.tagName.toLowerCase(), empty: focused.hasAttribute('data-request-empty-action') } : null;
+      const focus = focused ? { id: focused.closest('.request-row')?.dataset.requestKey, recent: focused.hasAttribute('data-request-recent-toggle'), action: focused.dataset.requestAction, tag: focused.tagName.toLowerCase(), empty: focused.hasAttribute('data-request-empty-action') } : null;
       list.replaceChildren();
-      if (!result.items.length) list.append(emptyRequests(status));
+      const inbox = status === 'inbox';
+      if (!result.items.length) list.append(emptyRequests(status, Boolean(result.historyTotal)));
+      let section;
       for (const job of result.items) {
-        const row = node('section', undefined, 'request-row'), heading = node('div', undefined, 'request-heading');
-        row.dataset.requestId = job.id;
-        const status = node('span', labels[job.status] || job.status, 'request-state'); status.dataset.state = job.status;
-        const name = node('strong', job.change || 'Project question'); name.title = name.textContent;
-        heading.append(name, status);
-        row.append(heading);
-        const detail = node('details'); detail.open = expanded.has(job.id);
-        const summary = node('summary'); summary.append(node('span', job.message || 'View request details', 'request-summary-text'), requestIcon('chevron')); detail.append(summary);
-        const body = node('div', undefined, 'request-detail-body'), log = node('ol');
-        for (const item of job.logs?.slice(-30) || []) log.append(node('li', item.message));
-        if (log.children.length) body.append(node('h3', 'Activity'), log);
-        if (job.result) body.append(node('h3', 'Result'), node('p', job.result, 'request-result'));
-        detail.append(body); row.append(detail);
-        const footer = node('div', undefined, 'request-footer'), meta = node('div', undefined, 'request-meta');
-        const kind = node('span', actions[job.action] || job.action, 'request-kind'); kind.title = kind.textContent;
-        meta.append(kind, requestTime(job.updatedAt));
-        const controls = node('div', undefined, 'request-controls'); controls.append(openLink(job));
-        if (['queued', 'awaiting-input'].includes(job.status) || job.status === 'running' && !job.origin && agent.queue?.active?.id === job.id && !agent.queue.active.ownerConnected) controls.append(button(job.status === 'running' ? 'End stalled request' : 'Cancel request', 'cancel', job.id));
-        if (['failed', 'cancelled'].includes(job.status) && ['explore', 'preview', 'verify', 'impact'].includes(job.action)) controls.append(button('Retry', 'retry', job.id));
-        if (!['queued', 'running', 'awaiting-input'].includes(job.status)) controls.append(button('Delete…', 'delete', job.id));
-        footer.append(meta, controls); row.append(footer); list.append(row);
+        if (inbox && section !== Boolean(job.needsAttention)) {
+          section = Boolean(job.needsAttention);
+          list.append(node('h3', section ? 'Needs attention' : 'In progress', 'requests-section-title'));
+        }
+        list.append(requestRow(job, !inbox, expanded));
+      }
+      if (inbox && result.recent?.length) {
+        const recent = node('details', undefined, 'requests-recent'); recent.id = 'requests-recent'; recent.open = recentOpen;
+        const summary = node('summary'); summary.setAttribute('data-request-recent-toggle', '');
+        summary.append(node('span', 'Recent'), node('small', String(result.recent.length)), requestIcon('chevron'));
+        recent.append(summary);
+        for (const job of result.recent) recent.append(requestRow(job, false, expanded));
+        list.append(recent);
       }
       list.scrollTop = scroll;
       if (focus) {
-        const row = [...list.querySelectorAll('.request-row')].find(row => row.dataset.requestId === focus.id);
-        const control = focus.empty ? list.querySelector('[data-request-empty-action]') : focus.action ? [...(row?.querySelectorAll('[data-request-action]') || [])].find(control => control.dataset.requestAction === focus.action) : ['summary', 'a'].includes(focus.tag) ? row?.querySelector(focus.tag) : null;
+        const row = [...list.querySelectorAll('.request-row')].find(row => row.dataset.requestKey === focus.id);
+        const control = focus.recent ? list.querySelector('[data-request-recent-toggle]') : focus.empty ? list.querySelector('[data-request-empty-action]') : focus.action ? [...(row?.querySelectorAll('[data-request-action]') || [])].find(control => control.dataset.requestAction === focus.action) : ['summary', 'a'].includes(focus.tag) ? row?.querySelector(focus.tag) : null;
         (control || row?.querySelector('summary') || panel().querySelector('[data-request-filter]')).focus({ preventScroll: true });
       }
-      panel().querySelector('[data-request-pagination]').textContent = `${result.total} ${result.total === 1 ? 'request' : 'requests'}${pages > 1 ? ` · ${page} of ${pages}` : ''}`;
+      panel().querySelector('[data-request-pagination]').textContent = `${result.total} ${inbox ? 'in inbox' : result.total === 1 ? 'request' : 'requests'}${pages > 1 ? ` · ${page} of ${pages}` : ''}`;
       panel().querySelector('footer').hidden = result.total === 0;
       const paging = panel().querySelector('[data-request-pages]'); if (paging) paging.hidden = pages <= 1;
       panel().querySelector('[data-request-page="previous"]').disabled = page <= 1;
@@ -154,7 +191,12 @@
     activityPending = (async () => {
       const result = await api('/api/activity?' + new URLSearchParams({ change: current.dataset.change || '', creation: query.searchParams.get('creation') || '' }));
       agent = result.agent; document.dispatchEvent(new window.CustomEvent('agent-status', { detail: agent }));
-      for (const count of document.querySelectorAll('[data-request-count]')) { count.textContent = result.active.length; count.hidden = !result.active.length; }
+      const attention = result.attention || 0, inboxCount = result.inboxCount ?? attention;
+      const markerLabel = inboxCount ? `${inboxCount} ${inboxCount === 1 ? 'item' : 'items'} in your inbox${attention ? `; ${attention} ${attention === 1 ? 'needs' : 'need'} your attention` : ''}` : 'No pending requests';
+      for (const count of document.querySelectorAll('[data-request-count]')) { count.textContent = inboxCount; count.hidden = !inboxCount; count.title = markerLabel; }
+      for (const toggle of document.querySelectorAll('.topbar [data-requests-toggle]')) {
+        toggle.title = markerLabel; toggle.setAttribute('aria-label', `Requests. ${markerLabel}`);
+      }
       renderDrafts(result.drafts);
       for (const status of document.querySelectorAll('[data-job-state]')) status.textContent = labels[result.active.find(job => job.change === status.dataset.jobState)?.status] || '';
       if (current !== workspace()) return;
@@ -229,7 +271,7 @@
     control.disabled = true;
     try {
       await api(`/api/jobs/${encodeURIComponent(id)}/${action}`, payload);
-      if (action === 'retry') { feedback(''); document.dispatchEvent(new window.CustomEvent('spequi-toast', { detail: { message: 'Retry queued.' } })); }
+      if (action === 'retry' || action === 'dismiss') { feedback(''); document.dispatchEvent(new window.CustomEvent('spequi-toast', { detail: { message: action === 'dismiss' ? 'Dismissed from inbox. History kept.' : 'Retry queued.' } })); }
       else feedback(action === 'delete' ? 'Request removed.' : 'Request cancelled.');
       await Promise.all([activity(), loadRequests()]);
     }
@@ -240,7 +282,7 @@
     const toggle = event.target.closest('[data-requests-toggle]');
     if (toggle) {
       const visible = panel().hidden; close(); panel().hidden = !visible;
-      if (visible) { opener = toggle; toggle.setAttribute('aria-expanded', 'true'); panel().querySelector('[data-requests-close]').focus(); void loadRequests(); }
+      if (visible) { opener = toggle; toggle.setAttribute('aria-expanded', 'true'); positionPanel(); panel().querySelector('[data-requests-close]').focus(); void loadRequests(); }
       return;
     }
     if (event.target.closest('[data-requests-close]')) { close(); opener?.focus(); return; }
@@ -266,14 +308,21 @@
     }
     const control = event.target.closest('[data-request-action]'); if (!control) return;
     const { requestAction: action, requestId: id } = control.dataset;
-    if (action !== 'delete') { void perform(control, action, id); return; }
+    if (action !== 'delete') { void perform(control, action, id, action === 'dismiss' ? { through: control.dataset.requestThrough } : {}); return; }
     const dialog = document.getElementById('request-delete-dialog'); dialog.querySelector('[name=reviewData]').checked = true; dialog.returnValue = ''; dialog.showModal();
     dialog.addEventListener('close', () => { if (dialog.returnValue === 'confirm') void perform(control, action, id, { reviewData: dialog.querySelector('[name=reviewData]').checked }); }, { once: true });
   });
   document.addEventListener('change', event => { if (event.target.matches('[data-request-filter]')) { page = 1; void loadRequests(); } });
   document.addEventListener('keydown', event => { if (event.key === 'Escape' && panel() && !panel().hidden && !document.querySelector('dialog[open]')) { close(); opener?.focus(); } });
   document.addEventListener('requests-updated', () => { void activity(); void loadRequests(); });
-  document.addEventListener('agent-status', event => { agent = event.detail; });
+  document.addEventListener('agent-status', event => {
+    const next = event.detail;
+    const changed = agent.status !== next.status || agent.queue?.active?.id !== next.queue?.active?.id || agent.queue?.active?.ownerConnected !== next.queue?.active?.ownerConnected;
+    agent = next;
+    if (changed) { void activity(); void loadRequests(); }
+  });
   document.addEventListener('htmx:afterSwap', () => { void activity(); });
+  window.addEventListener('resize', positionPanel);
+  window.addEventListener('scroll', positionPanel, { passive: true });
   void activity();
 })();

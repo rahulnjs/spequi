@@ -3,6 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { runtime, writeJSON, readJSON } from './files.mjs';
+import { initializeAnalytics } from './analytics.mjs';
 
 const skillFile = fileURLToPath(new URL('../skills/spequi/SKILL.md', import.meta.url));
 const metadata = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'));
@@ -55,5 +56,6 @@ export async function initProject(root) {
   await writeGenerated(entry, `${generated} Start this project's pinned viewer runtime.\nprocess.argv.splice(2, 0, 'start');\nawait import('./cli.mjs');\n`);
   await updateGitignore(root);
   const skill = await installSkill(root);
+  await initializeAnalytics(root);
   return { root, workspace: runtime(root), ...skill };
 }

@@ -3,17 +3,18 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import { parseHTML } from 'linkedom';
+import { requestPage } from '../src/requests.mjs';
 const script = await fs.readFile(new URL('../public/requests.js', import.meta.url), 'utf8');
 const flush = () => new Promise(resolve => setImmediate(resolve));
-async function drawer({ empty = false, requests } = {}) {
-  const { document, window } = parseHTML('<html><head><meta name="csrf-token" content="csrf"></head><body><button data-requests-toggle aria-expanded="false">Requests</button><button id="outside">Outside</button><aside id="requests-panel" hidden><button data-requests-close>Close</button><select data-request-filter><option value="all" selected>All</option><option value="active">Active</option></select><div data-requests-feedback></div><div data-request-list></div><footer><span data-request-pagination></span><button data-request-page="previous">Previous</button><button data-request-page="next">Next</button></footer></aside><div id="workspace" data-change="feature" data-refresh-url="/?change=feature" data-request-state="[]"></div></body></html>');
-  let active, filterValue = 'all';
+async function drawer({ empty = false, requests, mode = 'all', agentState = {} } = {}) {
+  const { document, window } = parseHTML('<html><head><meta name="csrf-token" content="csrf"></head><body><button data-requests-toggle aria-expanded="false">Requests<span data-request-count hidden></span></button><button id="outside">Outside</button><aside id="requests-panel" hidden><button data-requests-close>Close</button><select data-request-filter><option value="inbox">Inbox</option><option value="all" selected>All history</option><option value="active">Active</option></select><div data-requests-feedback></div><div data-request-list></div><footer><span data-request-pagination></span><button data-request-page="previous">Previous</button><button data-request-page="next">Next</button></footer></aside><div id="workspace" data-change="feature" data-refresh-url="/?change=feature" data-request-state="[]"></div></body></html>');
+  let active, filterValue = mode;
   Object.defineProperty(document.querySelector('[data-request-filter]'), 'value', { get: () => filterValue, set: value => { filterValue = value; } });
   Object.defineProperty(document, 'activeElement', { get: () => active });
   window.HTMLElement.prototype.focus = function () { active = this; };
   const job = { id: 'request-one', action: 'explore', change: 'feature', status: 'completed', message: 'Inspect the requirement', updatedAt: new Date().toISOString(), logs: [{ message: 'Checked' }] };
   vm.runInNewContext(script, { document, window, URL, URLSearchParams, location: { href: 'http://localhost/?change=feature' }, setTimeout, clearTimeout,
-    fetch: async url => ({ ok: true, json: async () => url.startsWith('/api/requests') ? { items: empty || new URL(url, 'http://localhost').searchParams.get('status') === 'active' ? [] : requests || [job], total: empty || new URL(url, 'http://localhost').searchParams.get('status') === 'active' ? 0 : (requests || [job]).length, page: 1, pages: 1 } : { agent: {}, revision: '[]', thread: '', drafts: [], active: [] } }) });
+    fetch: async url => ({ ok: true, json: async () => url.startsWith('/api/requests') ? requestPage(empty ? [] : requests || [job], Object.fromEntries(new URL(url, 'http://localhost').searchParams), { agent: agentState }) : { agent: agentState, attention: requestPage(empty ? [] : requests || [job], {}, { agent: agentState }).attention, revision: '[]', thread: '', drafts: [], active: [] } }) });
   await flush(); document.querySelector('[data-requests-toggle]').click(); await flush();
   return { document, window };
 }
@@ -88,4 +89,38 @@ test('an empty active filter can return to history without closing the drawer', 
   assert.equal(document.querySelector('.requests-empty'), null);
   assert.ok(document.querySelector('.request-row'));
   assert.equal(document.querySelector('#requests-panel footer').hidden, false);
+});
+
+test('inbox displays grouped attention and progress, with five collapsed recent results and safe dismissal', async () => {
+  const make = (id, change, status, minute) => ({ id, change, status, action: 'preview', message: `Action ${id}`, updatedAt: new Date(Date.UTC(2026, 10, 14, 0, minute)).toISOString(), logs: [] });
+  const requests = [make('old', 'feature', 'completed', 0), make('question', 'feature', 'awaiting-input', 1), make('queued', 'another', 'queued', 2), make('cancelled', 'abandoned', 'cancelled', 3)];
+  for (let i = 0; i < 8; i++) requests.push(make(`recent-${i}`, `completed-${i}`, 'completed', 4 + i));
+  const { document, window } = await drawer({ requests, mode: 'inbox' });
+  assert.deepEqual([...document.querySelectorAll('.requests-section-title')].map(node => node.textContent), ['Needs attention', 'In progress']);
+  const rows = document.querySelectorAll('[data-request-list]>.request-row');
+  assert.equal(rows.length, 2); assert.equal(rows[0].dataset.requestId, 'question');
+  assert.equal(rows[0].querySelector('.request-group-count').textContent, '2 actions');
+  assert.equal(rows[0].querySelector('.request-open').textContent, 'Reply');
+  assert.equal(document.querySelector('[data-request-count]').textContent, '1');
+  const recent = document.getElementById('requests-recent');
+  assert.equal(recent.open, false); assert.equal(recent.querySelectorAll('.request-row').length, 5);
+  assert.equal(recent.querySelectorAll('[data-request-action=dismiss]').length, 5);
+  assert.equal(document.querySelector('[data-request-action=delete]'), null);
+  const filter = document.querySelector('[data-request-filter]'); filter.value = 'all'; filter.dispatchEvent(new window.Event('change', { bubbles: true })); await flush();
+  assert.equal(document.querySelectorAll('.request-row').length, requests.length);
+  assert.ok(document.querySelector('[data-request-id=cancelled]'));
+  assert.ok(document.querySelector('[data-request-action=delete]'));
+});
+
+test('grouped live updates keep focus and disclosure when the representative action changes', async () => {
+  const requests = [{ id: 'old-error', change: 'feature', action: 'preview', status: 'failed', updatedAt: '2026-11-14T00:00:00.000Z', logs: [] }];
+  const { document, window } = await drawer({ requests, mode: 'inbox' });
+  const row = document.querySelector('.request-row'); row.querySelector('details').setAttribute('open', ''); row.querySelector('summary').focus();
+  requests.push({ id: 'new-question', change: 'feature', action: 'preview', status: 'awaiting-input', updatedAt: '2026-11-14T00:01:00.000Z', logs: [] });
+  document.dispatchEvent(new window.Event('requests-updated')); await flush();
+  const next = document.querySelector('.request-row');
+  assert.equal(next.dataset.requestId, 'new-question');
+  assert.equal(next.querySelector('details').open, true);
+  assert.equal(document.activeElement, next.querySelector('summary'));
+  assert.equal(document.querySelector('[data-request-count]').textContent, '1', 'attention counts the spec once');
 });
