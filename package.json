@@ -1,23 +1,25 @@
 {
   "name": "spequi",
-  "version": "0.1.0",
-  "description": "A local workspace for planning, implementation previews, and OpenSpec code review",
+  "version": "0.1.1",
+  "description": "Local web UI for OpenSpec: plan specs with your coding agent, review spec-linked diffs, apply only what you approve.",
+  "keywords": [
+    "openspec",
+    "spec-driven-development",
+    "code-review",
+    "coding-agents",
+    "ai-agents",
+    "claude-code",
+    "codex",
+    "diff-viewer"
+  ],
+  "homepage": "https://github.com/rahulnjs/spequi#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/rahulnjs/spequi.git"
   },
-  "homepage": "https://github.com/rahulnjs/spequi#readme",
   "bugs": {
     "url": "https://github.com/rahulnjs/spequi/issues"
   },
-  "keywords": [
-    "openspec",
-    "code-review",
-    "diff",
-    "specifications",
-    "htmx",
-    "agents"
-  ],
   "type": "module",
   "bin": {
     "spequi": "bin/spequi.mjs"
@@ -41,6 +43,7 @@
     "skills/",
     "templates/",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE",
     "public/session.js",
     "docs/agent-workflow.md",

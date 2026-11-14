@@ -8,16 +8,16 @@ There is no `await invokeSkill()` implementation. A skill is an instruction docu
 
 ## 1. The components
 
-| Component | Responsibility | Implementation |
-| --- | --- | --- |
-| Browser UI | Submit actions, display progress, collect answers | [public/workflow.js](../public/workflow.js), [src/studio-view.mjs](../src/studio-view.mjs) |
-| Local server | Protect browser mutations, route actions and replies, notify the UI | [src/server.mjs](../src/server.mjs) |
-| Lifecycle layer | Check readiness and enqueue the requested action | [src/lifecycle.mjs](../src/lifecycle.mjs) |
-| Job queue | Persist requests, claim ownership, choose workflows, store results | [src/jobs.mjs](../src/jobs.mjs) |
-| Agent CLI | Report a session, poll, ask, wait, log, finish or fail | [bin/spequi.mjs](../bin/spequi.mjs) |
-| Session evidence | Store credential-free agent/MCP reports and evaluate freshness | [src/agent-session.mjs](../src/agent-session.mjs) |
-| Question storage | Retain questions and answers on the same owned job | [src/job-dialogue.mjs](../src/job-dialogue.mjs) |
-| Agent skill | Instruct the current agent to coordinate the loop | [spequi SKILL.md](../skills/spequi/SKILL.md) |
+| Component        | Responsibility                                                      | Implementation                                                                             |
+| ---------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Browser UI       | Submit actions, display progress, collect answers                   | [public/workflow.js](../public/workflow.js), [src/studio-view.mjs](../src/studio-view.mjs) |
+| Local server     | Protect browser mutations, route actions and replies, notify the UI | [src/server.mjs](../src/server.mjs)                                                        |
+| Lifecycle layer  | Check readiness and enqueue the requested action                    | [src/lifecycle.mjs](../src/lifecycle.mjs)                                                  |
+| Job queue        | Persist requests, claim ownership, choose workflows, store results  | [src/jobs.mjs](../src/jobs.mjs)                                                            |
+| Agent CLI        | Report a session, poll, ask, wait, log, finish or fail              | [bin/spequi.mjs](../bin/spequi.mjs)                                                        |
+| Session evidence | Store credential-free agent/MCP reports and evaluate freshness      | [src/agent-session.mjs](../src/agent-session.mjs)                                          |
+| Question storage | Retain questions and answers on the same owned job                  | [src/job-dialogue.mjs](../src/job-dialogue.mjs)                                            |
+| Agent skill      | Instruct the current agent to coordinate the loop                   | [spequi SKILL.md](../skills/spequi/SKILL.md)                                               |
 
 The browser talks to the server over local HTTP and receives WebSocket notifications. The agent’s CLI commands use the project server’s authenticated loopback protocol when it is running. `.spequi/server.json` binds that connection to the project root; an unavailable saved connection is an explicit restart error. Headless commands without a server retain the file protocol. They do not send prompts over the browser's WebSocket connection.
 
@@ -91,14 +91,14 @@ const report = {
   agent,
   sessionId: id,
   reportedAt: Date.now(),
-  mcps: { supported: mcps.supported, connections }
+  mcps: { supported: mcps.supported, connections },
 };
 
-await writeJSON(runtime(root, 'agent-session.json'), report);
-await writeJSON(runtime(root, 'agent.json'), {
+await writeJSON(runtime(root, "agent-session.json"), report);
+await writeJSON(runtime(root, "agent.json"), {
   agent,
   sessionId: id,
-  at: Date.now()
+  at: Date.now(),
 });
 ```
 
@@ -132,17 +132,17 @@ For example, a user requests an implementation preview. The browser submits the 
 
 ```js
 // Simplified browser request. The selected change must already be ready.
-await fetch('/api/lifecycle/actions', {
-  method: 'POST',
+await fetch("/api/lifecycle/actions", {
+  method: "POST",
   headers: {
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-    'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    "X-CSRF-Token": document.querySelector("meta[name=csrf-token]").content,
   },
   body: JSON.stringify({
-    action: 'preview',
-    change: 'example-change'
-  })
+    action: "preview",
+    change: "example-change",
+  }),
 });
 ```
 
@@ -172,18 +172,18 @@ The action-to-skill mapping currently includes:
 
 ```js
 const skillRoutes = {
-  explore: { skill: 'openspec-explore', required: false },
-  propose: { skill: 'openspec-propose', required: true },
-  preview: { skill: 'openspec-apply-change', required: true },
-  verify: { skill: 'openspec-verify-change', required: false },
-  archive: { skill: 'openspec-archive-change', required: true },
+  explore: { skill: "openspec-explore", required: false },
+  propose: { skill: "openspec-propose", required: true },
+  preview: { skill: "openspec-apply-change", required: true },
+  verify: { skill: "openspec-verify-change", required: false },
+  archive: { skill: "openspec-archive-change", required: true },
   impact: { skill: null, required: false },
-  'update-specs': { skill: 'openspec-update-change', required: true },
-  'create-change': { skill: null, required: false },
-  'start-plan': { skill: null, required: false },
-  'plan-next': { skill: null, required: false },
-  'revise-plan': { skill: 'openspec-update-change', required: true },
-  'sync-specs': { skill: 'openspec-sync-specs', required: true }
+  "update-specs": { skill: "openspec-update-change", required: true },
+  "create-change": { skill: null, required: false },
+  "start-plan": { skill: null, required: false },
+  "plan-next": { skill: null, required: false },
+  "revise-plan": { skill: "openspec-update-change", required: true },
+  "sync-specs": { skill: "openspec-sync-specs", required: true },
 };
 ```
 
@@ -192,18 +192,17 @@ Full-plan `start-plan` requests use the proposal route. Next-artifact requests u
 After selecting the route, `claimNext()` constructs the workflow:
 
 ```js
-job.workingDirectory = job.action === 'preview'
-  ? await createPreview(root, job.id)
-  : root;
+job.workingDirectory =
+  job.action === "preview" ? await createPreview(root, job.id) : root;
 
 job.workflow = {
-  mode: 'same-session',
-  ...(job.action === 'start-plan' && job.planMode === 'full'
+  mode: "same-session",
+  ...(job.action === "start-plan" && job.planMode === "full"
     ? skillRoutes.propose
     : skillRoutes[job.action]),
   directory: job.workingDirectory,
   protocolDirectory: root,
-  change: job.change
+  change: job.change,
 };
 
 job.instructions = instructions(job);
@@ -258,10 +257,10 @@ The behavior contract lives in the [same-session routing section of the skill](.
 
 For an implementation preview:
 
-| Directory | What happens there |
-| --- | --- |
-| `workflow.directory` | Read the copied planning context, implement, install needed dependencies and run checks inside the isolated copy |
-| `workflow.protocolDirectory` | Run `agent log`, `ask`, `input`, `finish` and `fail` against the original project's queue |
+| Directory                    | What happens there                                                                                               |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `workflow.directory`         | Read the copied planning context, implement, install needed dependencies and run checks inside the isolated copy |
+| `workflow.protocolDirectory` | Run `agent log`, `ask`, `input`, `finish` and `fail` against the original project's queue                        |
 
 All implementation edits, including task checkboxes, stay inside the preview copy. The agent must re-resolve OpenSpec roots there and refuse paths that escape it. The snapshot is not an OS sandbox; the agent must honor that boundary.
 
@@ -316,11 +315,11 @@ const question = {
   id: randomUUID(),
   message: message.trim(),
   options,
-  askedAt: new Date().toISOString()
+  askedAt: new Date().toISOString(),
 };
 
 (job.questions ||= []).push(question);
-job.status = 'awaiting-input';
+job.status = "awaiting-input";
 ```
 
 The agent then waits with:
@@ -343,7 +342,7 @@ POST /api/lifecycle/jobs/<job-id>/reply
 ```js
 question.answer = answer.trim();
 question.answeredAt = new Date().toISOString();
-job.status = 'running';
+job.status = "running";
 ```
 
 The next `agent input` result contains that retained answer. The current agent reads it and resumes the same workflow. If the request is cancelled instead, the agent stops that work rather than continuing or waiting indefinitely. Browser reloads do not discard the question or answer because both are stored on the job.
@@ -379,8 +378,8 @@ node .spequi/cli.mjs agent fail JOB_ID \
 `updateJob()` checks the token and current state. It performs action-specific completion checks, such as requiring actual new planning artifacts, checking full-plan readiness, validating an impact report or freezing an implementation preview. It then persists the result:
 
 ```js
-job.status = 'completed';
-job.result = message || 'Completed';
+job.status = "completed";
+job.result = message || "Completed";
 ```
 
 The app waits for this explicit completion. It does not infer completion because the agent read a skill, produced a chat response, checked some task boxes, or stopped polling. The checks also do not prove every instruction was followed or every behavior is correct; verification and code review still matter.
@@ -457,3 +456,42 @@ sequenceDiagram
 ```
 
 The queue, ownership, persistence, questions and status checks are application code. Carrying out a selected skill is the cooperating agent's work in its existing session. Keeping those responsibilities explicit explains both why the flow works across skill-capable coding tools and why it pauses when the agent stops serving the queue.
+
+# Agent liveness and MCP reports
+
+> Merge this section into your existing `docs/agent-workflow.md` (it already covers queue, skill routing and spec links).
+
+The header's agent indicator reflects a recent agent heartbeat, independent of the browser's connection to the local server.
+It distinguishes: live, working, awaiting an answer, not responding, and unattached.
+Connection details show the last heartbeat and MCP metadata reported by the current session.
+
+**Reconnect agent** opens instructions to resume the spequi skill in the same coding session, with a **Check connection** action.
+Requests and answers stay saved. Spequi never restarts an agent automatically.
+
+## Reporting MCP status
+
+The agent can write a credential-free report under `.spequi`, then run:
+
+```bash
+node .spequi/cli.mjs agent report --file .spequi/session-report.json --name "Spequi Agent"
+```
+
+```json
+{
+  "sessionId": "a-stable-random-id-for-this-attachment",
+  "mcps": {
+    "supported": true,
+    "connections": [{ "name": "Filesystem", "status": "connected" }]
+  }
+}
+```
+
+- Allowed statuses: `connected`, `disconnected`, `unavailable`, `unknown`.
+- Only display names and statuses are accepted. Omit credentials, server URLs, environment variables and transport configuration.
+- If the host cannot enumerate connection status, report `{"mcps":{"supported":false,"connections":[]}}`.
+- A tool catalog or a configured server alone is not evidence of a healthy connection.
+- Keep the returned session ID for refreshes, pass it as `agent next --session-id <id>`, and use the same agent name when polling.
+- Refresh at least every five minutes or whenever connections change.
+- Missing, expired or disconnected-session reports show as unknown, never as a fabricated count.
+- The header shows **MCPs** when the session has not supplied evidence, and **0 MCPs** only when a fresh supported report confirms zero.
+- Reporting does not replace serving the agent queue.
