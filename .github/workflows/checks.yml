@@ -10,6 +10,8 @@ permissions:
 
 jobs:
   verify:
+    env:
+      SPEQUI_ANALYTICS_DISABLED: '1'
     strategy:
       fail-fast: false
       matrix:

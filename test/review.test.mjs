@@ -485,10 +485,10 @@ test('Update spec submits once without HTMX, retains drafts and exposes retryabl
   await refresh(); submit(); assert.equal(requests.length, before + 1, 'refresh cannot enable a second update');
   release();
   await waitFor(() => !form().hasAttribute('aria-busy') && toasts.length === 1);
-  assert.match(toasts[0].message, /Planning update queued/);
-  assert.match(toasts[0].downloadUrl, /^\/api\/reviews\/.+\/feedback\/.+$/);
+  assert.match(toasts[0].message, /Spec update queued/);
   assert.equal(document.querySelector('#review-feedback .success-message'), null);
   const queued = (await listJobs(root)).filter(item => item.action === 'update-specs'); assert.equal(queued.length, 1);
+  assert.equal(typeof queued[0].feedbackId, 'string');
   assert.equal(form().querySelector('button').disabled, true);
   assert.equal(document.getElementById('workspace').dataset.change, 'review');
   assert.equal(document.getElementById('review-comment-body').value, 'Keep my unfinished note.');

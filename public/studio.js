@@ -161,12 +161,19 @@
       remember();
       return;
     }
-    if (event.target.closest('[data-studio-conversation-jump]') && studio) {
-      studio.dataset.pane = 'conversation'; synchronizePane();
+    const requestJump = event.target.closest('[data-studio-conversation-jump]');
+    if (requestJump && studio) {
+      studio.dataset.pane = 'conversation'; state().conversationExpanded = true;
+      synchronizeExpansion(); synchronizePane();
       const thread = document.getElementById('studio-thread');
-      if (thread) thread.scrollTop = thread.scrollHeight;
-      studio.querySelector('[data-studio-expand]')?.focus({ preventScroll: true });
+      const request = requestJump.dataset.studioRequest ? document.getElementById(`studio-job-${requestJump.dataset.studioRequest}`) : studio.querySelector('.studio-progress')?.closest('.studio-exchange') || thread?.querySelector('.studio-exchange:last-of-type');
+      request?.querySelector('.studio-history')?.setAttribute('open', '');
+      const requestBox = request?.getBoundingClientRect?.(), threadBox = thread?.getBoundingClientRect?.();
+      if (thread) thread.scrollTop = requestBox && threadBox ? thread.scrollTop + requestBox.top - threadBox.top - 18 : thread.scrollHeight;
+      const target = request || thread;
+      target?.setAttribute('tabindex', '-1'); target?.focus({ preventScroll: true });
       remember();
+      return;
     }
     if (event.target.closest('[data-studio-question-jump]') && studio) {
       studio.dataset.pane = 'conversation'; synchronizePane();

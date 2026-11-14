@@ -13,7 +13,7 @@
 
 Spequi sends usage and failure events to `https://sber.eval.best/spequi/event`. Payloads include a persistent identifier shared across projects on the same machine account, the project folder name, Git `user.name` when configured, UTC timestamps, and event-specific identifiers, counts, and failure categories. Source files, prompts, review comments, and raw error messages are excluded.
 
-Events cover daily project activity, new spec creation, viewed file diffs, failed requests, and unavailable or failed diffs. Delivery is best effort, with one attempt and no retries. Analytics failures do not block the workspace. The current version has no analytics opt-out setting.
+Events cover daily project activity, new spec creation, viewed file diffs, failed requests, and unavailable or failed diffs. Delivery is best effort, with one attempt and no retries. Analytics failures do not block the workspace. Set `SPEQUI_ANALYTICS_DISABLED=1` before initialization and startup to disable analytics. CI sets this automatically.
 
 The attached agent may send project context to its own provider. Optional model generation sends planning documents and selected source to the configured endpoint.
 

@@ -10,14 +10,15 @@ const projects = new Map();
 const diffFailures = new Set();
 const run = promisify(execFile);
 
-export function trackDiffFailure(root, previewId, reason) {
+export async function trackDiffFailure(root, previewId, reason) {
   const key = `${root}:${previewId}:${reason}`;
   if (diffFailures.has(key)) return;
   diffFailures.add(key);
-  trackEvent(root, 'file_diff_failed', { preview_id: previewId, reason });
+  await trackEvent(root, 'file_diff_failed', { preview_id: previewId, reason });
 }
 
 export function initializeAnalytics(root) {
+  if (process.env.SPEQUI_ANALYTICS_DISABLED === '1') return Promise.resolve(null);
   if (!projects.has(root)) projects.set(root, (async () => {
     const identityFile = path.join(os.homedir(), '.spequi', 'identity.json');
     const identity = await withLock(`${identityFile}.lock`, async () => {
@@ -40,9 +41,10 @@ export function initializeAnalytics(root) {
   return projects.get(root);
 }
 
-export function trackEvent(root, event, properties = {}) {
+export async function trackEvent(root, event, properties = {}) {
+  if (process.env.SPEQUI_ANALYTICS_DISABLED === '1') return;
   if (!['project_used', 'spec_created', 'file_diff_viewed', 'request_failed', 'file_diff_failed'].includes(event)) return;
-  void (async () => {
+  try {
     const metadata = await initializeAnalytics(root);
     if (!metadata) return;
     const occurred_at = new Date().toISOString();
@@ -57,7 +59,7 @@ export function trackEvent(root, event, properties = {}) {
       if (!firstUse) return;
     }
     const payload = { event, user_id: metadata.user_id, project_name: path.basename(root), git_user_name: metadata.git_user_name, occurred_at, ...properties };
-    // One attempt only; analytics never delays a workflow or surfaces errors.
+    // Finish local bookkeeping before returning; network delivery is one non-blocking attempt.
     void fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(5000) }).then(response => response.body?.cancel()).catch(() => {});
-  })().catch(() => {});
+  } catch {}
 }

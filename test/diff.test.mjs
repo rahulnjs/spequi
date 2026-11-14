@@ -103,7 +103,7 @@ test('review routes render highlighted folded code, wrapping controls, paging, a
   assert.match(html, /aria-label="Filter changed files"/);
   assert.equal((await fetch(viewer.origin + '/assets/diff.css')).status, 200);
   const { document } = parseHTML(html);
-  assert.deepEqual([...document.querySelectorAll('.document-tab>span:first-of-type')].map(node => node.textContent), ['proposal', 'design', 'tasks', 'Files', 'Build']);
+  assert.deepEqual([...document.querySelectorAll('.document-tab>span:first-of-type')].map(node => node.textContent), ['proposal', 'design', 'tasks', 'Files']);
   assert.equal(document.querySelector('.compact-change-header .diff-version-form,.compact-change-header .badge,.compact-change-header details'), null);
   assert.match(document.querySelector('.breadcrumbs').textContent, /Changes.*highlight/);
   assert.equal(document.querySelector('[data-review-details]').getAttribute('aria-expanded'), 'true');
@@ -113,7 +113,6 @@ test('review routes render highlighted folded code, wrapping controls, paging, a
   assert.equal(document.querySelector('#review-details [data-apply-form],#review-details .workflow-form,#review-details .activity-section'), null);
   for (const tab of document.querySelectorAll('.document-tab')) {
     const { document: next } = parseHTML(await (await fetch(viewer.origin + tab.getAttribute('href'))).text());
-    if (tab.textContent.includes('Build')) { assert.ok(next.querySelector('#studio'));  assert.equal(next.querySelector('#review-details'), null); continue; }
     assert.ok(next.querySelector('.details-icon-toggle[aria-expanded="true"]'));
     assert.ok(next.querySelector('.compact-change-header>.breadcrumbs+.document-tabs'));
     assert.equal(next.querySelector('#review-details .workflow-form,#review-details .activity-section,#review-details .preview-details'), null);

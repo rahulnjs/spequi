@@ -99,7 +99,7 @@ test('picker and slash commands share guarded lifecycle operations without a she
  const queued=await requestCommand(root,{command:'/opsx:continue',change:'flow'},options);assert.equal(queued.job.action,'plan-next');
  await assert.rejects(requestCommand(root,{command:'/explore question',change:'flow'},options),/current workflow/);
  assert.match((await requestCommand(root,{command:'/status',change:'flow'},options)).summary,/OpenSpec status/);
- const {lifecycleState}=await import('../src/lifecycle.mjs');const state=await lifecycleState(root,'flow',options);const html=renderCommandPicker(state);assert.match(html,/Finish or cancel the current workflow/);assert.match(html,/\/apply/);
+ const {lifecycleState}=await import('../src/lifecycle.mjs');const state=await lifecycleState(root,'flow',options);const html=renderCommandPicker(state);assert.match(html,/Waiting for agent/);assert.match(html,/View request/);assert.doesNotMatch(html,/data-lifecycle-form|data-studio-insert-command/);
  await updateJob(root,queued.job.id,null,'cancel','End test');
 });
 
@@ -141,12 +141,12 @@ test('session reporting CLI and header preserve honest status and escape MCP nam
  document.querySelector('#agent-indicator').click();
  document.querySelector('[data-session-close]').click();assert.equal(document.querySelector('#agent-connections').hidden,true);assert.equal(active,'agent');
  const event=new window.Event('agent-status');event.detail={status:'unresponsive',connected:false,at:Date.now()-50000,mcps:{supported:true,stale:true,connectedCount:null,connections:[{name:'Local files',status:'connected'}]}};document.dispatchEvent(event);
- assert.equal(document.querySelector('#mcp-count').textContent,'MCPs');assert.match(document.querySelector('#session-mcps').textContent,/Last reported/);assert.equal(document.querySelector('.mcp-connected'),null);
- assert.match(document.querySelector('#agent-indicator').textContent,/Reconnect agent/);assert.match(document.querySelector('#agent-indicator').getAttribute('title'),/Heartbeat stopped/);assert.match(document.querySelector('#agent-indicator').getAttribute('aria-description'),/same coding session/);assert.equal(document.querySelector('#session-recovery').hidden,false);
+ assert.equal(document.querySelector('#mcp-count').textContent,'MCPs');assert.match(document.querySelector('#session-mcps').textContent,/Last: Connected/);assert.equal(document.querySelector('.mcp-service-state').dataset.state,'unknown');
+ assert.match(document.querySelector('#agent-indicator').textContent,/Agent offline/);assert.match(document.querySelector('#agent-indicator').getAttribute('title'),/Heartbeat stopped/);assert.match(document.querySelector('#agent-indicator').getAttribute('aria-description'),/same coding session/);assert.equal(document.querySelector('#session-recovery').hidden,false);
  document.querySelector('[data-session-refresh]').click();await new Promise(r=>setTimeout(r,0));assert.equal(document.querySelector('#session-recovery').hidden,true);
  const zero=new window.Event('agent-status');zero.detail={status:'live',connected:true,mcps:{supported:true,stale:false,connectedCount:0,connections:[]}};document.dispatchEvent(zero);assert.equal(document.querySelector('#mcp-count').textContent,'0 MCPs');
  const working=new window.Event('agent-status');working.detail={status:'working',connected:true,agent:'GigaCode CLI',mcps:{supported:false,stale:false,connections:[],connectedCount:null}};document.dispatchEvent(working);assert.equal(document.querySelector('#agent-indicator').textContent,'GigaCode CLI · Working');
- working.detail={...working.detail,status:'unresponsive',connected:false};document.dispatchEvent(working);assert.equal(document.querySelector('#agent-indicator').textContent,'Reconnect agent');
+ working.detail={...working.detail,status:'unresponsive',connected:false};document.dispatchEvent(working);assert.equal(document.querySelector('#agent-indicator').textContent,'Agent offline');
 });
 
 test('slash input routes to the command endpoint while failed drafts remain intact',async()=>{

@@ -54,6 +54,7 @@
 .studio-artifact-file-menu .selected small{color:inherit;opacity:.85}
 .studio-artifact-choice-state{display:flex;align-items:center;justify-content:center;width:16px;flex-shrink:0;color:var(--accent-text)}
 .studio-artifact-choice-state>svg{width:15px;height:15px}
+.studio-artifact-file-help{position:sticky;bottom:-5px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;margin:6px -5px -5px;padding:10px 12px;border-top:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:10px;line-height:1.6}
 @media(pointer:coarse){.studio-artifact-file-picker>button{min-height:44px}.studio-artifact-file-menu>a{min-height:44px}}
 .studio-canvas-body{padding:24px 28px 36px;overflow:auto;min-height:0;flex:1;overflow-wrap:anywhere}
 .studio-document.prose{padding:0;max-width:74ch;margin:0 auto;font-size:14px;line-height:1.8}
@@ -147,6 +148,12 @@
 .studio-diff-panel .diff-file-path{display:block;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5}
 .studio[data-stage=implement] .studio-more{flex-shrink:0;max-height:50%;overflow:auto;margin:0;padding:10px 16px;border-top:1px solid var(--line)}
 .studio[data-stage=implement] .studio-empty{flex:1;min-height:0;overflow:auto;padding:28px 24px}
+.studio[data-stage=implement] .studio-implementation-empty{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;max-width:none;padding:32px clamp(24px,4vw,56px)}
+.studio-implementation-empty>svg{width:28px;height:28px;margin-bottom:18px;color:var(--accent-text);flex-shrink:0}
+.studio-implementation-empty>h1{font-size:23px;max-width:30ch}
+.studio-implementation-empty>p{max-width:52ch;margin:0;font-size:13px;line-height:1.75}
+.studio-empty-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}
+.studio-implementation-empty>.studio-empty-hint{margin-top:12px;font-size:11px}
 @container studio-code (max-width:700px){.studio-diff-panel .diff-file-tools{width:100%;justify-content:space-between;gap:6px}.studio-diff-panel .syntax-language{display:none}.studio-diff-panel .diff-file-paging{margin-left:auto}.studio-diff-panel .diff-file-identity{width:100%}}
 @container studio-code (max-width:400px){.studio[data-stage=implement] .studio-picker>label{display:none}.studio-files-button{padding-inline:8px}.studio-diff-panel .diff-file-toolbar{padding-inline:12px;gap:8px}.studio-diff-panel .diff-file-tools{flex-wrap:wrap}.studio-diff-panel .diff-file-paging{padding-inline-start:4px}}
 @media(pointer:coarse){.studio-changed-files .changed-file-link{min-height:44px}.studio-diff-panel .diff-icon-button{width:44px;height:44px;min-width:44px;min-height:44px}.studio-diff-panel .segmented a,.studio-diff-panel .diff-wrap{min-height:44px;display:inline-flex;align-items:center}}
@@ -204,6 +211,7 @@
 .studio-progress-indicator[data-working]{border-top-color:var(--accent);animation:studio-working 1s linear infinite}
 .studio-history>summary{display:flex;align-items:baseline;justify-content:space-between;gap:12px;cursor:pointer;padding:10px 0;border-bottom:1px solid var(--line);font-size:12px}
 .studio-history>summary>span{font-size:10px;color:var(--muted)}.studio-history[open]>summary{margin-bottom:14px}
+.studio-exchange:focus{outline:2px solid var(--accent);outline-offset:6px;border-radius:4px}
 .session-indicator[data-session-state=working]{color:var(--accent-text)}
 .session-indicator[data-session-state=working] i{width:6px;height:6px;background:none;border:1px solid var(--line);border-top-color:var(--accent);animation:studio-working 1s linear infinite}
 .session-indicator[data-session-state=unresponsive]{color:var(--muted)}.session-indicator[data-session-state=unresponsive]:hover{background:var(--rail);color:var(--text)}

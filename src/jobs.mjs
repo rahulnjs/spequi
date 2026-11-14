@@ -34,7 +34,7 @@ export async function writeJob(root, job) {
   const previous = job.status === 'failed' ? await readJSON(jobPath(root, job.id)).catch(() => null) : null;
   await writeJSON(jobPath(root, job.id), job);
   if (job.status === 'failed' && previous?.status !== 'failed') {
-    trackEvent(root, 'request_failed', { request_id: job.id, action: job.action, source: job.origin || 'agent', failure_stage: previous?.preparing ? 'preparation' : 'execution' });
+    await trackEvent(root, 'request_failed', { request_id: job.id, action: job.action, source: job.origin || 'agent', failure_stage: previous?.preparing ? 'preparation' : 'execution' });
   }
   changes.emit(await fs.realpath(root), job.id);
 }
@@ -263,7 +263,7 @@ export async function updateJob(root, id, token, operation, message) {
     job.logs.push({ at: job.updatedAt, message: String(message || operation).slice(0, 12000) });
     job.logs = job.logs.slice(-200);
     await writeJob(root, job);
-    if (operation === 'finish' && job.action === 'start-plan') trackEvent(root, 'spec_created', { spec_id: job.id });
+    if (operation === 'finish' && job.action === 'start-plan') await trackEvent(root, 'spec_created', { spec_id: job.id });
     return job;
   });
 }

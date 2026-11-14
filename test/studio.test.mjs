@@ -423,7 +423,7 @@ test('Build planning omits the duplicate document row for both existing and newl
     const document = await readyDocument(viewer.origin + query);
     assert.equal(document.querySelector('#studio-document-picker,.studio-version,.studio-compare,.studio-picker'), null);
     assert.equal(document.querySelectorAll('[aria-label="Planning artifacts"] a').length, 2);
-    const files = [...document.querySelectorAll('[aria-label="Artifact documents"] a')];
+    const files = [...document.querySelectorAll('#studio-plan-files[aria-label="Planning documents"] a')];
     assert.equal(files.length, 2);
     assert.ok(files.every(link => (new URL(link.getAttribute('href'), viewer.origin).searchParams.get('created') || '') === created));
     assert.match(document.querySelector('.studio-document').textContent, /Second capability/);

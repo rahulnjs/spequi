@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {initProject} from '../src/project.mjs';
+import {initProject,viewerVersion} from '../src/project.mjs';
 import {createPreview} from '../src/previews.mjs';
 
 test('Spequi initializes fresh, leaves every old store untouched, and excludes old state from previews',async t=>{
@@ -34,6 +34,6 @@ test('Spequi initializes fresh, leaves every old store untouched, and excludes o
  const manifest=JSON.parse(await fs.readFile(path.join(root,'.spequi/previews/fresh-preview/manifest.json')));
  assert.ok(Object.hasOwn(manifest,'app.js'));
  assert.ok(!Object.keys(manifest).some(file=>file.startsWith('.openspec-ui/')||file.startsWith('.change-viewer/')||file.startsWith('.spequi/')));
- const launch=await fs.readFile(path.join(root,'.spequi/cli.mjs'),'utf8');assert.match(launch,/"spec":"spequi@0\.1\.0"/);assert.doesNotMatch(launch, /"spec":"openspec-ui@/);
+ const launch=await fs.readFile(path.join(root,'.spequi/cli.mjs'),'utf8');assert.ok(launch.includes(`"spec":"spequi@${viewerVersion}"`));assert.doesNotMatch(launch, /"spec":"openspec-ui@/);
  const ignore=await fs.readFile(path.join(root,'.gitignore'),'utf8');assert.equal(ignore.split('\n').filter(line=>line==='/.spequi/').length,1);
 });

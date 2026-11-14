@@ -27,7 +27,7 @@ test('manual status checks show progress, prevent duplicates, and report an unch
   assert.match(result.textContent, /Still disconnected/);
   assert.equal(button.disabled, false); assert.equal(button.textContent, 'Refresh status');
   assert.equal(button.hasAttribute('aria-busy'), false);
-  assert.match(document.querySelector('#agent-indicator').textContent, /Reconnect agent/);
+  assert.match(document.querySelector('#agent-indicator').textContent, /Agent offline/);
 });
 test('status-check failures are visible and a retry can recover without losing the result or button', async () => {
   const { document, window, button, result } = await setup();

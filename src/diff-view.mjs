@@ -10,7 +10,7 @@ import { trackDiffFailure } from './analytics.mjs';
 export async function renderFileDiff(options, helpers) {
   try { return await fileDiff(options, helpers); }
   catch (error) {
-    trackDiffFailure(options.root, options.job.id, 'render_failed');
+    await trackDiffFailure(options.root, options.job.id, 'render_failed');
     throw error;
   }
 }

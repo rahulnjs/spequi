@@ -128,8 +128,8 @@ test('shared workspace protects replies, escapes questions, and retains review n
   let document = await get();
   assert.equal(document.querySelectorAll('[data-studio-stage]').length, 3);
   const review = await readyDocument(viewer.origin + '/?change=flow&view=rendered');
-  const build = [...review.querySelectorAll('.document-tab')].find(tab => tab.textContent === 'Build');
-  assert.equal(new URL(build.getAttribute('href'), viewer.origin).searchParams.get('view'), 'studio');
+  assert.equal(review.querySelector('.document-tab[href*="view=studio"]'), null);
+  assert.ok(review.querySelector('.document-tab[href*="view=preview"]'));
   assert.equal(document.querySelector('#workspace').classList.contains('review-details-open'), false);
   assert.equal(document.querySelector('#review-details'), null);
   const csrf = document.querySelector('meta[name=csrf-token]').content;

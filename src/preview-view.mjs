@@ -13,12 +13,12 @@ export async function getPreviewContext(root, params, jobs, selected) {
   let result = null;
   try { result = job ? await previewResult(root, job.id) : null; }
   catch (error) {
-    if (job && diffRequested) trackDiffFailure(root, job.id, 'unreadable_result');
+    if (job && diffRequested) await trackDiffFailure(root, job.id, 'unreadable_result');
     throw error;
   }
   if (job && diffRequested) {
     const reason = !result ? 'missing_result' : !Array.isArray(result.changes) ? 'invalid_result' : !result.changes.length && result.unsupported?.length ? 'unsupported_files' : !result.changes.length && !changeState(selected).complete ? 'empty_result' : null;
-    if (reason) trackDiffFailure(root, job.id, reason);
+    if (reason) await trackDiffFailure(root, job.id, reason);
   }
   return {
     previews, job, result, comments: job && result ? await listComments(root, job.id) : [],

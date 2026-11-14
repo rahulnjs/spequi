@@ -6,7 +6,7 @@
       detail.open = false;
       if (restoreFocus && detail.contains(document.activeElement)) detail.querySelector('summary')?.focus();
     }
-    for (const panel of document.querySelectorAll('.session-panel:not([hidden]), #requests-panel:not([hidden]), [data-dropdown-panel]:popover-open')) {
+    for (const panel of document.querySelectorAll('.session-panel:not([hidden]), #requests-panel:not([hidden]), [data-dropdown-panel][data-open="true"]')) {
       const triggers = dropdownTriggers(panel);
       if (target && (panel.contains(target) || triggers.some(button => button.contains(target)))) continue;
       if (restoreFocus && panel.contains(document.activeElement)) triggers[0]?.focus();
@@ -30,14 +30,15 @@
   document.addEventListener('beforetoggle', event => {
     if (!event.target.matches('[data-dropdown-panel]')) return;
     const open = event.newState === 'open';
+    event.target.dataset.open = String(open);
     for (const trigger of dropdownTriggers(event.target)) trigger.setAttribute('aria-expanded', String(open));
     if (open) { closeDropdowns(event.target); positionDropdown(event.target); }
   }, true);
   document.addEventListener('click', event => {
     const panel = event.target.closest('[data-dropdown-choice]')?.closest('[data-dropdown-panel]');
-    if (panel?.matches(':popover-open')) panel.hidePopover();
+    if (panel?.dataset.open === 'true') panel.hidePopover();
   }, true);
-  window.addEventListener('resize', () => { for (const panel of document.querySelectorAll('[data-dropdown-panel]:popover-open')) positionDropdown(panel); });
+  window.addEventListener('resize', () => { for (const panel of document.querySelectorAll('[data-dropdown-panel][data-open="true"]')) positionDropdown(panel); });
   let analyticsDay;
   const viewedPreviews = new Set();
   function recordUsage() {
@@ -55,8 +56,8 @@
     try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); } catch {}
     send({ event: 'file_diff_viewed', preview_id: preview, changed_file_count: Number(diff.dataset.diffCount), layout: diff.dataset.diffLayout });
   }
-  for (const event of ['htmx:afterSettle', 'visibilitychange', 'click', 'keydown']) document.addEventListener(event, () => requestAnimationFrame(recordUsage));
-  requestAnimationFrame(recordUsage);
+  for (const event of ['htmx:afterSettle', 'visibilitychange', 'click', 'keydown']) document.addEventListener(event, () => globalThis.requestAnimationFrame?.(recordUsage));
+  globalThis.requestAnimationFrame?.(recordUsage);
   const themeToggle = document.getElementById('theme-toggle');
   function applyTheme(theme) {
     const dark = theme === 'dark' || theme === 'developer';

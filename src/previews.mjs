@@ -63,7 +63,7 @@ export async function previewContents(root, id, file) {
   if (!change) throw new Error('File is not part of this preview');
   const dir = basePath(root, id);
   const before = await getBuffer(path.join(dir, 'baseline'), file), after = await getBuffer(path.join(dir, 'proposed'), file);
-  if (change.beforeHash && before === null || change.afterHash && after === null) trackDiffFailure(root, id, 'missing_snapshot');
+  if (change.beforeHash && before === null || change.afterHash && after === null) await trackDiffFailure(root, id, 'missing_snapshot');
   return { before: before?.toString('utf8') || '', after: after?.toString('utf8') || '' };
 }
 export async function applyPreview(root, id) {

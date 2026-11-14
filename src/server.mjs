@@ -164,9 +164,9 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
       if (![origin, `http://localhost:${server.address().port}`].includes(request.headers.origin) || !tokenMatches(request.headers['x-csrf-token'], csrf)) return send(response, 403, '<p class="error-message">Local session verification failed. Reload the viewer and retry.</p>');
       const payload = await body(request, url.pathname.startsWith('/api/source-preview/') ? 2 * 1024 * 1024 : 100000);
       if (url.pathname === '/api/analytics') {
-        if (payload.event === 'project_used') trackEvent(root, 'project_used');
+        if (payload.event === 'project_used') await trackEvent(root, 'project_used');
         else if (payload.event === 'file_diff_viewed' && /^[a-zA-Z0-9_-]{1,100}$/.test(payload.preview_id || '') && Number.isInteger(payload.changed_file_count) && payload.changed_file_count > 0 && ['unified', 'split'].includes(payload.layout)) {
-          trackEvent(root, 'file_diff_viewed', { preview_id: payload.preview_id, changed_file_count: payload.changed_file_count, layout: payload.layout });
+          await trackEvent(root, 'file_diff_viewed', { preview_id: payload.preview_id, changed_file_count: payload.changed_file_count, layout: payload.layout });
         } else return send(response, 400, '', 'application/json');
         return send(response, 204, '');
       }
