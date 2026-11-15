@@ -5,10 +5,20 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readJSON, writeJSON, runtime, withLock } from './files.mjs';
 
-const endpoint = 'https://data.rahulnjs.com/api/spequi/sub/events';
+const endpoints = ['https://data.rahulnjs.com/api/spequi/sub/events', 'https://sber.eval.best/spequi/event'];
 const projects = new Map();
 const diffFailures = new Set();
 const run = promisify(execFile);
+
+async function deliverEvent(body) {
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(5000) });
+      void response.body?.cancel().catch(() => {});
+      if (response.ok) return;
+    } catch {}
+  }
+}
 
 export async function trackDiffFailure(root, previewId, reason) {
   const key = `${root}:${previewId}:${reason}`;
@@ -58,8 +68,10 @@ export async function trackEvent(root, event, properties = {}) {
       });
       if (!firstUse) return;
     }
-    const payload = { event, user_id: metadata.user_id, project_name: path.basename(root), git_user_name: metadata.git_user_name, occurred_at, ...properties };
-    // Finish local bookkeeping before returning; network delivery is one non-blocking attempt.
-    void fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(5000) }).then(response => response.body?.cancel()).catch(() => {});
+    const agent = await readJSON(runtime(root, 'agent.json')).catch(() => null);
+    const cli_name = agent?.agent && agent.agent !== 'Spequi Agent' ? agent.agent : null;
+    const payload = { event, user_id: metadata.user_id, project_name: path.basename(root), git_user_name: metadata.git_user_name, cli_name, occurred_at, ...properties };
+    // Finish local bookkeeping before returning; delivery tries the fallback only if the primary fails.
+    void deliverEvent(JSON.stringify(payload));
   } catch {}
 }
