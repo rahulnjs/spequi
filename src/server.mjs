@@ -104,6 +104,7 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
         return;
       }
       if (request.method === 'GET') {
+        if (['/docs', '/docs/'].includes(url.pathname)) return send(response, 200, await fs.readFile(path.join(publicDir, 'index.html')), 'text/html; charset=utf-8');
         if (url.pathname === '/' && url.searchParams.get('view') === 'lifecycle') {
           url.searchParams.set('view', 'studio');
           return send(response, 302, '', undefined, { Location: url.pathname + url.search });

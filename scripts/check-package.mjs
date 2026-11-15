@@ -9,7 +9,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 if (!process.env.npm_execpath) throw new Error('Run npm run check:package.');
 const metadata = JSON.parse(await fs.readFile(path.join(root, 'package.json')));
 const folders = ['bin', 'src', 'public', 'skills', 'templates'];
-const documents = ['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE', 'docs/agent-workflow.md'];
+const documents = ['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE', 'public/index.html', 'docs/agent-workflow.md'];
 const { stdout } = await promisify(execFile)(process.execPath, [process.env.npm_execpath, 'pack', '--dry-run', '--json'], { cwd: root, timeout: 60000, maxBuffer: 4 * 1024 * 1024 });
 const packed = JSON.parse(stdout)[0], files = new Set(packed.files.map(file => file.path));
 assert.equal(metadata.bin['spequi'], 'bin/spequi.mjs');

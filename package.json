@@ -42,6 +42,7 @@
     "public/studio.js",
     "skills/",
     "templates/",
+    "public/index.html",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",

@@ -155,6 +155,11 @@
 #toast.visible{pointer-events:auto}#toast a{color:inherit;text-decoration:underline;text-underline-offset:3px;white-space:nowrap}
 
 .new-change-link{margin-bottom:16px;justify-content:center}
+.topbar .tool-docs-link{display:inline-flex;align-items:center;gap:7px;min-height:32px;padding:6px 10px;border:1px solid transparent;border-radius:6px;color:var(--muted);font-size:12px;line-height:18px;white-space:nowrap}
+.topbar .tool-docs-link:hover{background:var(--rail);color:var(--text)}
+.tool-docs-link svg{width:16px;height:16px}
+@media(max-width:760px){.tool-docs-link span{display:none}}
+@media(pointer:coarse){.topbar .tool-docs-link{min-height:44px}}
 .sidebar-community{margin-top:auto;padding:20px 8px 4px;font-size:11px;line-height:1.6}
 .sidebar-community-invite{display:flex;align-items:center;gap:10px;padding:12px 0;border-top:1px solid var(--line);color:var(--text);text-decoration:none}
 .sidebar-community-invite>svg{flex-shrink:0;width:17px;height:17px;color:var(--muted)}
