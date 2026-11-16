@@ -5,7 +5,7 @@ import { localReadiness, openspecJSON } from './openspec-cli.mjs';
 import { listJobs, enqueue, pendingStatuses } from './jobs.mjs';
 import { previewResult } from './previews.mjs';
 import { runtime, readJSON, writeJSON, within, withLock } from './files.mjs';
-import { submitDraft } from './drafts.mjs';
+import { submitDraft, finishDrafts } from './drafts.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const validationPath = (root, change) => runtime(root, 'validation', `${hash(change)}.json`);
@@ -15,7 +15,7 @@ export async function previewPlanChanged(root, selected, preview, result) {
   if (!manifest) return true;
   const prefix = `openspec/changes/${selected.id}/`;
   const expected = new Map(Object.entries(manifest).filter(([file]) => file.startsWith(prefix) && file.endsWith('.md')).map(([file, entry]) => [file, entry.hash]));
-  if (result.applied) for (const change of result.changes) if (change.file.startsWith(prefix) && change.file.endsWith('.md')) {
+  if (result.applied) for (const change of [...result.changes, ...(result.taskUpdates || [])]) if (change.file.startsWith(prefix) && change.file.endsWith('.md')) {
     if (change.afterHash) expected.set(change.file, change.afterHash); else expected.delete(change.file);
   }
   if (expected.size !== selected.files.length) return true;
@@ -40,6 +40,7 @@ export function lifecycleActions({ selected, readiness, error, pending, preview,
   add('plan-next', 'Create next artifact', common || (!readiness?.nextArtifact ? 'No planning artifact is ready. Existing artifacts can be revised below.' : ''));
   add('propose', 'Generate full plan', common || (readiness?.planningComplete ? 'The plan already exists. Request a revision instead.' : ''));
   add('revise-plan', 'Request a plan revision', common || (!selected?.files.length ? 'Create the first planning artifact before revising it.' : ''));
+  add('finish-planning', 'Finish planning', common || planning);
   add('preview', 'Generate implementation', common || planning || (readiness?.applyState !== 'ready' ? complete ? 'All tracked tasks are checked. Review existing work or revise the plan.' : 'The schema is not ready for implementation.' : ''));
   add('apply', result?.applied ? 'Changes applied' : 'Apply changes', selected?.archived ? 'This change is archived.' : !result?.changes.length ? 'No proposed file changes to apply.' : result.applied ? 'This preview was already applied.' : previewStale ? 'The spec changed. Generate a fresh code preview before applying.' : result.unsupported.length ? 'The preview contains unsupported files.' : pending ? 'Finish the current workflow first.' : '');
   add('verify', 'Verify implementation', common || planning || (!result?.applied && !complete ? 'Apply a reviewed preview or finish the tracked implementation first.' : ''));
@@ -74,7 +75,7 @@ export async function lifecycleState(root, change = '', { jobs, selected, getRea
 export async function requestLifecycle(root, payload, { getReadiness = localReadiness, runCLI = openspecJSON } = {}) {
   const { action, change = '', message = '', planMode = 'next', requestKey, draftId } = payload;
   if (typeof change !== 'string' || change.length > 160) throw new Error('Invalid change name');
-  const allowed = ['start-plan', 'create-change', 'explore', 'plan-next', 'propose', 'revise-plan', 'preview', 'verify', 'validate', 'refresh', 'sync-specs', 'archive', 'archive-override'];
+  const allowed = ['start-plan', 'create-change', 'explore', 'plan-next', 'propose', 'revise-plan', 'finish-planning', 'preview', 'verify', 'validate', 'refresh', 'sync-specs', 'archive', 'archive-override'];
   if (!allowed.includes(action)) throw new Error('Unknown lifecycle action');
   const lock = await within(root, `.spequi/lifecycle-${hash(change || 'project')}.lock`);
   return withLock(lock, async () => {
@@ -98,6 +99,11 @@ export async function requestLifecycle(root, payload, { getReadiness = localRead
     if (action === 'refresh') return { refreshed: true, readiness: state.readiness, error: state.error };
     const option = state.actions[action];
     if (!option?.enabled) throw new Error(option?.reason || 'This lifecycle action is unavailable');
+    if (action === 'finish-planning') {
+      await finishDrafts(root, change);
+      const doc = state.selected.files.find(file => file.endsWith('/proposal.md')) || state.selected.files[0];
+      return { finishedPlanning: true, url: `/?${new URLSearchParams({ change, view: 'rendered', ...(doc ? { doc } : {}) })}` };
+    }
     if (action === 'validate') {
       const before = await fingerprint(root, state.selected);
       const response = await runCLI(root, 'validate', change);

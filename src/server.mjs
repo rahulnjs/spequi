@@ -20,7 +20,7 @@ import { requestCommand } from './commands.mjs';
 import { answerJob, askJob, jobInput } from './job-dialogue.mjs';
 import { reportSession } from './agent-session.mjs';
 import { createWorkspaceState } from './workspace-state.mjs';
-import { listDrafts, saveDraft, deleteDraft, resumeDraft, finishDrafts } from './drafts.mjs';
+import { listDrafts, saveDraft, deleteDraft, resumeDraft } from './drafts.mjs';
 import { requestPage, deleteRequest, retryRequest, dismissRequest, inboxState } from './requests.mjs';
 import { viewerVersion } from './project.mjs';
 import { conversation } from './studio-view.mjs';
@@ -47,12 +47,7 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
   const csrf = randomBytes(32).toString('hex'), agentToken = randomBytes(32).toString('hex');
   const jobReader = createJobReader(root);
   let broadcast = () => {}, closed = false;
-  const state = createWorkspaceState(root, { check: readinessCheck, changed: (change, readiness) => {
-    broadcast('readiness', { change });
-    if (readiness?.planningComplete) void jobReader.read().then(jobs => {
-      if (!jobs.some(job => job.change === change && pendingStatuses.includes(job.status))) return finishDrafts(root, change);
-    }).catch(error => { if (!quiet) process.stderr.write(`Draft readiness: ${error.message}\n`); });
-  } });
+  const state = createWorkspaceState(root, { check: readinessCheck, changed: change => broadcast('readiness', { change }) });
   let origin;
   const send = (response, status, content, type = 'text/html; charset=utf-8', headers = {}) => {
     response.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', ...headers }); response.end(content);
@@ -189,6 +184,7 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
       if (['/api/lifecycle/actions', '/api/lifecycle/command'].includes(url.pathname)) {
         const { job, ...result } = await (url.pathname.endsWith('/command') ? requestCommand(root,payload) : requestLifecycle(root, payload));
         if (result.refreshed) state.invalidate(payload.change);
+        if (result.finishedPlanning) { state.invalidate(payload.change); broadcast('changed', { change: payload.change }); }
         return send(response, job ? 201 : 200, JSON.stringify({ ...result, ...(job ? { job: { id: job.id, action: job.action, change: job.change, status: job.status } } : {}) }), 'application/json', { 'HX-Trigger': 'workspace-updated' });
       }
       const replyMatch = url.pathname.match(/^\/api\/lifecycle\/jobs\/([a-zA-Z0-9_-]+)\/reply$/);
@@ -245,7 +241,7 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
         if ((await listJobs(root)).some(item => item.change === job.change && pendingStatuses.includes(item.status))) throw new Error('Wait for the current request to finish before applying.');
         if (await previewPlanChanged(root, selected, job, await previewResult(root, job.id))) throw new Error('The spec changed. Generate a fresh code preview before applying.');
         await applyPreview(root, applyMatch[1]);
-        return send(response, 200, '<p class="success-message">Code changes applied to your project. <a href="/?change=' + encodeURIComponent(job.change) + '&amp;view=studio&amp;stage=finish">Continue in Build</a></p>', undefined, { 'HX-Trigger': 'workspace-updated' });
+        return send(response, 200, '<p class="success-message">Code changes applied to your project. <a href="/?change=' + encodeURIComponent(job.change) + '&amp;view=workflow">Continue to validation</a></p>', undefined, { 'HX-Trigger': 'workspace-updated' });
       }
       return send(response, 404, 'Action not found');
     } catch (error) {

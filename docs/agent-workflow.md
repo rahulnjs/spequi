@@ -60,7 +60,7 @@ The installer registers GigaCode alongside the existing agents. Project initiali
 
 `skill install --global` creates the same paths under the user's home directory. The command wrappers reference the skill in the matching scope and use GigaCode's `{{args}}` parameter syntax. After discovery, invoke `/skills spequi` or `/spequi`. These paths and formats follow GigaCode's [skills](https://gitverse.ru/docs/ai/ai-assistant-gigacode/gigacode-cli/skills) and [commands](https://gitverse.ru/docs/ai/ai-assistant-gigacode/gigacode-cli/commands) documentation.
 
-The installer registers the viewer skill; it does not install other OpenSpec workflows. Those must be discoverable separately. Registration and refresh behavior are tested locally; indefinite polling in a real GigaCode session still requires an integration test.
+The installer registers the viewer skill; it does not install other OpenSpec workflows. Those must be discoverable separately. Registration and refresh behavior are tested locally. GigaCode CLI has also been tested on Windows.
 
 ### Register a session
 

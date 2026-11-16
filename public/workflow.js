@@ -82,7 +82,7 @@
       // Do not redirect a response belonging to a page the user has already left.
       if (result.url && workspace === document.getElementById('workspace')) {
         const isCurrentChange = result.job?.change && result.job.change === workspace.dataset.change;
-        if (!isCurrentChange) { location.assign(result.url); return; }
+        if (!isCurrentChange || result.finishedPlanning) { location.assign(result.url); return; }
         for (const input of form.querySelectorAll('textarea')) input.value = '';
       }
       if (workspace === document.getElementById('workspace')) {

@@ -178,7 +178,7 @@ Missing required workflows fail the job with an explanation; they are never inst
 <h3>GigaCode notes</h3>
 <p>GigaCode uses monitored Shell calls with <code>is_background: true</code> for the server and five-minute <code>agent wait</code> calls.
 Background completion must resume the host session for unattended idle attachment to work. The skill includes a check and
-a foreground fallback. Registration is tested; continuous polling in a real GigaCode session is not yet verified.</p>
+a foreground fallback. GigaCode CLI has also been tested on Windows.</p>
 <h2>Other installation options</h2>
 <h3>Global installation</h3>
 <pre><code class="language-bash">npm install -g spequi
@@ -234,7 +234,7 @@ schema-ready artifact. Planning never starts implementation automatically.</p>
 <p>Ideas save under <strong>Drafts</strong> in the left panel. Return there to resume or delete a draft. Deleting a draft can also remove
 its generated planning files, after confirmation.</p>
 <h2>Planning stages</h2>
-<p>New specs and unfinished drafts show three stages in the header: <strong>Shape spec</strong>, <strong>Implement</strong>, <strong>Validate &#x26; archive</strong>.
+<p>New specs and unfinished drafts stay in <strong>Shape spec</strong> until their required planning artifacts are ready. Choose <strong>Finish planning</strong> to move the change from Drafts into Review. This does not generate implementation code.
 Existing changes open in document review from the left panel. Continue a draft or open a planning request from <strong>Requests</strong> to return to its planning workspace.</p>
 <h3>Shape spec</h3>
 <ul>
@@ -244,17 +244,19 @@ Existing changes open in document review from the left panel. Continue a draft o
 <li><strong>Planning actions</strong> offers the next artifact or the full plan.</li>
 <li>Documents are read-only in the viewer.</li>
 </ul>
-<h3>Implement</h3>
+<h3>Review files</h3>
 <ul>
-<li>Generate an isolated preview and choose its version.</li>
-<li>Browse changed files beneath the selected change in the left panel. The <strong>Files</strong> button brings the list into view.</li>
+<li>Open <strong>Files</strong> in Review to generate and inspect an isolated implementation diff. The tab opens immediately with a loading indicator.</li>
+<li>Reopening Files uses the saved diff without generating another implementation.</li>
+<li>Browse changed files in the left panel. OpenSpec planning artifacts and <code>apply-instr.json</code> are excluded from source diffs.</li>
 <li>Previous/next controls, the selected file and diff tools stay above the independently scrolling code.</li>
-<li>Inspect the actual diff, then confirm <strong>Apply reviewed preview</strong>. A changed spec or a source conflict prevents applying.</li>
+<li>Inspect the actual diff, then confirm <strong>Apply changes</strong>. A changed spec or a source conflict prevents applying.</li>
 <li>A preview becomes stale when its planning documents change. Generate a fresh one before applying.</li>
 </ul>
-<p>Offline analysis, optional model proposals and patch import also live here. See <a href="#docs/offline-and-model">Offline tools</a>.</p>
+<p>Task checkbox updates are retained separately and applied with the reviewed code, using the same conflict checks. Other planning edits are not applied.</p>
+<p>Offline analysis, optional model proposals and patch import also live here. See <a href="offline-and-model.md">Offline tools</a>.</p>
 <h3>Validate &#x26; archive</h3>
-<p>Distinguishes local <strong>spec validation</strong> from agent <strong>implementation verification</strong>, and exposes sync and archive with
+<p>Open <strong>Workflow</strong> in Review, or <strong>Continue</strong> after applying code. This distinguishes local <strong>spec validation</strong> from agent <strong>implementation verification</strong>, and exposes sync and archive with
 their normal prerequisites. Archive confirmations appear in the conversation.</p>
 <p>Status, task readiness and strict validation use the installed <code>openspec</code> CLI locally, with no agent required.
 Missing or incompatible CLI capabilities disable those actions with an explanation. Checked task boxes alone do not
@@ -320,6 +322,7 @@ prove the implementation is correct.</p>
 <code>agent ask</code> and waits for the app's reply with <code>agent input --wait 300</code>. The job resumes with the same ownership token.</p>
 <ul>
 <li>Queued and awaiting-input requests can be cancelled.</li>
+<li>A request with no recent update may still be running; check back later.</li>
 <li>A running request can be ended only after its owning session's heartbeat expires. Stop the old agent in your coding tool first; ending a request does not terminate its process or undo its edits.</li>
 <li>Keep the agent session attached to continue waiting work.</li>
 </ul>
@@ -458,7 +461,7 @@ Generate a fresh preview when the plan changes.</p>
   commands/spequi.md
 </code></pre>
 <p><code>skill install --global</code> creates the same paths under the user's home directory. The command wrappers reference the skill in the matching scope and use GigaCode's <code>{{args}}</code> parameter syntax. After discovery, invoke <code>/skills spequi</code> or <code>/spequi</code>. These paths and formats follow GigaCode's <a href="https://gitverse.ru/docs/ai/ai-assistant-gigacode/gigacode-cli/skills" target="_blank" rel="noopener noreferrer">skills</a> and <a href="https://gitverse.ru/docs/ai/ai-assistant-gigacode/gigacode-cli/commands" target="_blank" rel="noopener noreferrer">commands</a> documentation.</p>
-<p>The installer registers the viewer skill; it does not install other OpenSpec workflows. Those must be discoverable separately. Registration and refresh behavior are tested locally; indefinite polling in a real GigaCode session still requires an integration test.</p>
+<p>The installer registers the viewer skill; it does not install other OpenSpec workflows. Those must be discoverable separately. Registration and refresh behavior are tested locally. GigaCode CLI has also been tested on Windows.</p>
 <h3>Register a session</h3>
 <p>The agent creates a small report under <code>.spequi</code>. This is an illustrative report, not a real attachment identifier:</p>
 <pre><code class="language-json">{
@@ -783,7 +786,7 @@ Requests and answers stay saved. Spequi never restarts an agent automatically.</
 </article>
 <article class="doc-content" data-doc="offline-and-model" hidden>
 <h1>Offline tools and model preview</h1>
-<p>These tools live under <strong>Build > Implement > Offline analysis and preview tools</strong> and need no attached agent.</p>
+<p>These tools live under <strong>Review > Files > Plan file changes</strong> and need no attached agent.</p>
 <h2>Analyze affected files</h2>
 <p>Matches the selected change's planning documents to current source, with no agent and no network. It explains explicit paths,
 named symbols, related text and local dependencies separately from actual changed files.</p>
@@ -861,8 +864,6 @@ named symbols, related text and local dependencies separately from actual change
 <ul>
 <li>A preview copy is <strong>not an OS security sandbox</strong>. The agent must honor its assigned working directory.</li>
 <li>Static impact evidence does not establish complete runtime behavior, dynamic references, aliases or external-package effects. Scan limitations stay visible in the UI.</li>
-<li>Native Windows execution is a release verification item.</li>
-<li>Continuous polling in a real GigaCode session has not been verified.</li>
 <li>Agent attachment depends on the host agent resuming its session when background work completes.</li>
 </ul>
 

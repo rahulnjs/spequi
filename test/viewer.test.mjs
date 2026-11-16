@@ -236,7 +236,7 @@ test('file diff generation displays progress and routes questions directly to im
   assert.match(queued, /File diff queued/);
   assert.doesNotMatch(queued, /id="generate-file-diff"/);
   const progress = parseHTML(queued).document.querySelector('.diff-empty-actions a');
-  assert.equal(new URL(progress.getAttribute('href'), viewer.origin).searchParams.get('stage'), 'implement');
+  assert.equal(new URL(progress.getAttribute('href'), viewer.origin).searchParams.get('view'), 'workflow');
   const job = await claimNext(root, 'Fixture agent');
   const running = await (await fetch(viewer.origin + '/?view=preview')).text();
   assert.match(running, /Your agent is generating the file diff/);
@@ -244,7 +244,7 @@ test('file diff generation displays progress and routes questions directly to im
   await askJob(root, job.id, job.claimToken, { message: 'Which behavior should change?' });
   const waiting = parseHTML(await (await fetch(viewer.origin + '/?view=preview')).text()).document;
   const reply = waiting.querySelector('.diff-empty-actions a');
-  assert.equal(reply.textContent, 'Reply in Build');
+  assert.equal(reply.textContent, 'Reply to agent');
   assert.equal(new URL(reply.getAttribute('href'), viewer.origin).searchParams.get('pane'), 'conversation');
   assert.equal(waiting.querySelector('#generate-file-diff'), null);
   await updateJob(root, job.id, job.claimToken, 'fail', 'A useful failure');
@@ -253,7 +253,7 @@ test('file diff generation displays progress and routes questions directly to im
   assert.match(failed, /Generate file diff/);
 });
 
-test('Files empty state uses neutral copy and distinct generation and implementation actions', async t => {
+test('Files empty state offers generation and offline tools within Review', async t => {
   const root = await fixture(t), viewer = await startServer({ root, port: 0, quiet: true }); t.after(() => viewer.close());
   const document = parseHTML(await (await fetch(viewer.origin + '/?change=add-feature&view=preview')).text()).document;
   const state = document.querySelector('.diff-empty-state');
@@ -261,9 +261,8 @@ test('Files empty state uses neutral copy and distinct generation and implementa
   assert.match(state.querySelector('.diff-agent-note').textContent, /requests will wait in the queue/);
   assert.equal(state.querySelector('.diff-empty-actions form [name=change]').value, 'add-feature');
   assert.equal(state.querySelector('.diff-empty-actions form [name=action]').value, 'preview');
-  const destination = new URL(state.querySelector('.diff-empty-actions a').getAttribute('href'), viewer.origin);
-  assert.equal(destination.searchParams.get('view'), 'studio');
-  assert.equal(destination.searchParams.get('stage'), 'implement');
+  assert.equal(state.querySelector('.diff-empty-actions a'), null);
+  assert.ok(state.querySelector('#source-preview-tools'));
 });
 
 test('review selects retained preview versions and changed files without mixing snapshots', async t => {
@@ -343,4 +342,36 @@ test('completed task state retains saved diffs and empty previews while exposing
   const pending = await get();
   assert.match(pending.querySelector('.diff-pending-note').textContent, /new diff is being generated/);
   assert.equal(pending.getElementById('generate-file-diff').disabled, true);
+});
+
+test('implementation diffs exclude planning and instruction files while applying checkbox updates with conflict checks', async t => {
+  const root = await fixture(t), tasks = 'openspec/changes/add-feature/tasks.md';
+  const proposal = await fs.readFile(path.join(root, 'openspec/changes/add-feature/proposal.md'), 'utf8');
+  await put(root, 'app.mjs', 'before\n');
+  await enqueue(root, { action: 'preview', change: 'add-feature' });
+  const job = await claimNext(root, 'Session');
+  await put(job.workingDirectory, 'app.mjs', 'after\n');
+  await put(job.workingDirectory, tasks, '# Tasks\n- [x] Done\n- [x] Pending\n');
+  await put(job.workingDirectory, 'openspec/changes/add-feature/proposal.md', '# Unrequested revision\n');
+  await put(job.workingDirectory, 'openspec/changes/other/tasks.md', '- [x] Unrelated\n');
+  await put(job.workingDirectory, 'apply-instr.json', '{"state":"ready"}');
+  await updateJob(root, job.id, job.claimToken, 'finish', 'Ready');
+  const result = await previewResult(root, job.id);
+  assert.deepEqual(result.changes.map(item => item.file), ['app.mjs']);
+  assert.deepEqual(result.taskUpdates.map(item => item.file), [tasks]);
+  // Previously saved previews put these files in the source change list.
+  const legacy = { ...result, changes: [...result.changes, ...result.taskUpdates, { file: 'apply-instr.json' }] };
+  delete legacy.taskUpdates;
+  await put(root, `.spequi/previews/${job.id}/result.json`, JSON.stringify(legacy));
+  const retained = await previewResult(root, job.id);
+  assert.deepEqual(retained.changes.map(item => item.file), ['app.mjs']);
+  assert.deepEqual(retained.taskUpdates.map(item => item.file), [tasks]);
+  await put(root, tasks, '# Tasks\n- [x] Done\n- [ ] Reworded task\n');
+  await assert.rejects(applyPreview(root, job.id), /Conflicts/);
+  assert.equal(await fs.readFile(path.join(root, 'app.mjs'), 'utf8'), 'before\n');
+  await put(root, tasks, '# Tasks\n- [x] Done\n- [ ] Pending\n');
+  await applyPreview(root, job.id);
+  assert.equal(await fs.readFile(path.join(root, tasks), 'utf8'), '# Tasks\n- [x] Done\n- [x] Pending\n');
+  assert.equal(await fs.readFile(path.join(root, 'openspec/changes/add-feature/proposal.md'), 'utf8'), proposal);
+  assert.equal(await exists(path.join(root, 'apply-instr.json')), false);
 });

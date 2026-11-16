@@ -24,10 +24,10 @@ test('manual status checks show progress, prevent duplicates, and report an unch
   assert.equal(button.textContent, 'Checking…'); assert.equal(button.getAttribute('aria-busy'), 'true');
   assert.match(result.textContent, /Checking agent status/);
   release(offline); await flush();
-  assert.match(result.textContent, /Still disconnected/);
+  assert.match(result.textContent, /may still be working/);
   assert.equal(button.disabled, false); assert.equal(button.textContent, 'Refresh status');
   assert.equal(button.hasAttribute('aria-busy'), false);
-  assert.match(document.querySelector('#agent-indicator').textContent, /Agent offline/);
+  assert.match(document.querySelector('#agent-indicator').textContent, /No recent update/);
 });
 test('status-check failures are visible and a retry can recover without losing the result or button', async () => {
   const { document, window, button, result } = await setup();
@@ -66,7 +66,7 @@ test('agent details distinguish listening, paused, active, stalled and unknown s
  render({...offline,status:'working',connected:true,queue:{queued:1,active}});
  assert.equal(value('session-current-change'),'draft-icon');assert.equal(value('session-current-state'),'Preparing');assert.equal(document.querySelector('[data-session-current]').hidden,false);
  render({...offline,status:'blocked',connected:true,queue:{queued:1,active:{...active,ownerConnected:false}}});
- assert.equal(value('session-current-state'),'Waiting for agent');assert.equal(document.getElementById('session-recovery-detail').hidden,false);assert.match(value('session-recovery-detail'),/stop it before ending/);
+ assert.equal(value('session-current-state'),'No recent update');assert.match(value('session-current-hint'),/may still be working/);assert.equal(document.getElementById('session-recovery-detail').hidden,false);assert.match(value('session-recovery-detail'),/stop it before ending/);
  render({...offline,queue:{queued:0,active:{...active,ownerConnected:false,origin:'local-edits'}}});
  assert.equal(value('session-current-state'),'Preparing');assert.match(value('session-current-hint'),/local preview/);assert.equal(document.getElementById('session-recovery-detail').hidden,true);
  render({...offline,status:'waiting',connected:true,queue:{queued:0,active:{...active,status:'awaiting-input'}}});

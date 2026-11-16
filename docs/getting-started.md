@@ -63,7 +63,7 @@ npx spequi@latest init
 
 GigaCode uses monitored Shell calls with `is_background: true` for the server and five-minute `agent wait` calls.
 Background completion must resume the host session for unattended idle attachment to work. The skill includes a check and
-a foreground fallback. Registration is tested; continuous polling in a real GigaCode session is not yet verified.
+a foreground fallback. GigaCode CLI has also been tested on Windows.
 
 ## Other installation options
 

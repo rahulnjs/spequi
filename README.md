@@ -89,8 +89,7 @@ Spequi sends usage and failure analytics, including project folder names, Git us
 
 ## Status
 
-Spequi is early. It is tested with Claude Code and Codex flows; continuous polling in a real GigaCode session and
-native Windows execution are not yet verified. Static impact analysis can miss dynamic references and aliases.
+Spequi is early. It has been tested with Claude Code and Codex, and with GigaCode CLI on Windows. Static impact analysis can miss dynamic references and aliases.
 See [Security and limits](docs/security.md) for the full list.
 
 Feedback and bug reports are welcome in [Issues](https://github.com/rahulnjs/spequi/issues).

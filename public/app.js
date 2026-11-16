@@ -119,8 +119,55 @@
     if (message && feedback) { feedback.textContent = message.text; feedback.className = message.error ? 'error-message' : 'success-message'; }
   }
   function readingViewport() { return document.querySelector('.diff-code-scroll') || document.querySelector('.reader'); }
+  let filesLoading = null;
+  function restoreFilesLoading(error = false) {
+    const saved = filesLoading;
+    filesLoading = null;
+    if (!saved || saved.workspace !== document.getElementById('workspace')) return;
+    saved.reader.replaceChildren(...saved.content);
+    saved.reader.removeAttribute('aria-busy');
+    saved.workspace.classList.toggle('diff-workspace', saved.diff);
+    saved.workspace.classList.toggle('review-details-open', saved.panelOpen);
+    for (const [tab, active] of saved.tabs) tab.classList.toggle('active', active);
+    if (saved.panel) saved.panel.hidden = saved.panelHidden;
+    if (error) {
+      const notice = document.createElement('div');
+      notice.className = 'files-load-error'; notice.setAttribute('role', 'alert');
+      const message = document.createElement('p'); message.textContent = 'Could not load file changes. Try again.';
+      const retry = saved.link.cloneNode(true); retry.className = 'button'; retry.textContent = 'Retry';
+      notice.append(message, retry); saved.reader.prepend(notice);
+      window.htmx?.process?.(notice);
+    }
+  }
+  function showFilesLoading(link, xhr) {
+    restoreFilesLoading();
+    const workspace = document.getElementById('workspace'), reader = workspace?.querySelector('.reader');
+    if (!reader) return;
+    const panel = workspace.querySelector('#review-details');
+    filesLoading = { workspace, reader, panel, panelHidden: panel?.hidden, link, xhr,
+      content: [...reader.childNodes], diff: workspace.classList.contains('diff-workspace'), panelOpen: workspace.classList.contains('review-details-open'),
+      tabs: [...workspace.querySelectorAll('.document-tab')].map(tab => [tab, tab.classList.contains('active')]) };
+    for (const [tab] of filesLoading.tabs) tab.classList.toggle('active', tab.hasAttribute('data-files-tab'));
+    const status = document.createElement('div');
+    status.className = 'files-loading'; status.setAttribute('role', 'status');
+    status.innerHTML = `<div class="files-loading-heading"><span class="files-loading-spinner" aria-hidden="true"></span><h2>Opening your file review</h2></div>
+      <p class="files-loading-description"></p>
+      <div class="files-skeleton" aria-hidden="true"><div class="files-skeleton-toolbar"><span></span><span>Current <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65"><path d="M5 12h14m-5-5 5 5-5 5"/></svg> Proposed</span></div>
+        <div class="files-skeleton-code">${['', '', 'removed', 'added', 'added', ''].map(tone => `<div class="files-skeleton-row ${tone}"><span></span><span></span></div>`).join('')}</div></div>
+      <dl class="files-loading-guide"><div><dt>Compare the code</dt><dd>Browse changed files and review additions and removals.</dd></div><div><dt>Review with context</dt><dd>Read linked spec sections, inspect file impact, and leave comments.</dd></div></dl>
+      <p class="files-loading-note">You decide when to apply the reviewed changes.</p>`;
+    const count = Number(workspace.querySelector('.document-tab[data-files-tab] .tab-count')?.textContent);
+    status.querySelector('.files-loading-description').textContent = count > 0
+      ? `Loading the saved comparison for ${count} changed ${count === 1 ? 'file' : 'files'}. See how the proposed implementation differs from your current code.`
+      : 'Compare your current code with a proposed implementation. If no diff is saved yet, you can generate one here.';
+    reader.replaceChildren(status); reader.setAttribute('aria-busy', 'true');
+    workspace.classList.add('diff-workspace');
+    workspace.classList.remove('review-details-open');
+    if (panel) panel.hidden = true;
+  }
+  let applyingRequest = null;
   function refresh() {
-    if (sourcePending.size || navigationRequests) { pendingRefresh = true; return; }
+    if (sourcePending.size || navigationRequests || applyingRequest) { pendingRefresh = true; return; }
     if (refreshing) { pendingRefresh = true; followUpRefresh = true; return; }
     if (!window.htmx) { pendingRefresh = true; return; }
     if (document.activeElement?.matches('input,textarea,select') || document.getElementById('apply-dialog')?.open || document.querySelector('dialog[open]')) { pendingRefresh = true; return; }
@@ -150,17 +197,50 @@
   document.addEventListener('htmx:configRequest', event => { event.detail.headers['X-CSRF-Token'] = document.querySelector('meta[name="csrf-token"]').content; });
   document.addEventListener('htmx:beforeRequest', event => {
     const xhr = event.detail?.xhr;
+    const applyForm = event.detail?.elt?.closest?.('[data-apply-form]');
+    if (applyForm) {
+      if (applyingRequest) { event.preventDefault(); return; }
+      const button = applyForm.querySelector('button'), feedback = document.getElementById('apply-feedback');
+      applyingRequest = { xhr, form: applyForm, button, html: button.innerHTML, disabled: button.disabled, feedback };
+      navigationGeneration++; backgroundXHR?.abort(); backgroundXHR = null;
+      applyForm.setAttribute('aria-busy', 'true'); button.disabled = true;
+      button.innerHTML = '<span class="apply-spinner" aria-hidden="true"></span>Applying changes…';
+      if (feedback) feedback.innerHTML = '<div class="applying-notice" role="status"><span class="apply-spinner" aria-hidden="true"></span><div><strong>Applying reviewed changes</strong><p>Saving the approved files to your project. This review will update when the operation finishes.</p></div></div>';
+    }
     if (event.detail?.requestConfig?.headers?.['X-Spequi-Refresh'] === '1' && xhr) {
       xhr.spequiGeneration = navigationGeneration; backgroundXHR = xhr;
     } else if (event.detail?.target?.id === 'workspace' && event.detail?.elt?.matches('a,form,input')) {
       navigationGeneration++; navigationRequests++;
-      if (xhr) xhr.spequiNavigation = true;
+      if (xhr) { xhr.spequiNavigation = true; xhr.spequiGeneration = navigationGeneration; }
       backgroundXHR?.abort(); backgroundXHR = null;
     }
     remember();
+    const filesTab = event.detail?.elt?.closest?.('a[data-files-tab]');
+    if (filesTab) showFilesLoading(filesTab, xhr);
+    else if (xhr?.spequiNavigation) restoreFilesLoading();
     if (event.detail.elt?.closest('[data-preserve-reader]')) { const reader = readingViewport(); preserveReader = reader ? { top: reader.scrollTop, left: reader.scrollLeft } : null; }
   });
   document.addEventListener('htmx:afterRequest', event => {
+    if (applyingRequest?.xhr === event.detail?.xhr) {
+      const { form, button, html, disabled, feedback } = applyingRequest;
+      applyingRequest = null; form.removeAttribute('aria-busy');
+      const success = event.detail.xhr.status >= 200 && event.detail.xhr.status < 300 && !event.detail.failed;
+      button.innerHTML = success ? 'Changes applied' : html; button.disabled = success || disabled;
+      if (success) { pendingRefresh = true; setTimeout(refresh, 100); }
+      else {
+        pendingRefresh = false;
+        if (feedback?.querySelector('.applying-notice')) {
+          feedback.replaceChildren();
+          const error = document.createElement('p'); error.className = 'error-message'; error.setAttribute('role', 'alert');
+          error.textContent = 'Could not confirm whether the files were applied. Refresh this review before trying again.';
+          feedback.append(error);
+        }
+      }
+    }
+    if (filesLoading?.xhr === event.detail?.xhr) {
+      if (event.detail.failed || event.detail.xhr.status === 0 || event.detail.xhr.status >= 400) restoreFilesLoading(true);
+      else filesLoading = null;
+    }
     if (!event.detail?.xhr?.spequiNavigation) return;
     navigationRequests = Math.max(0, navigationRequests - 1);
     if (!navigationRequests && pendingRefresh) setTimeout(refresh, 100);
@@ -168,6 +248,7 @@
   document.addEventListener('htmx:beforeSwap', event => {
     const generation = event.detail?.xhr?.spequiGeneration;
     if (generation !== undefined && generation !== navigationGeneration) event.detail.shouldSwap = false;
+    if (filesLoading?.xhr === event.detail.xhr && event.detail.xhr.status >= 400) event.detail.shouldSwap = false;
   });
   document.addEventListener('htmx:afterSwap', () => {
     restore(); initializeDiff();
@@ -175,7 +256,7 @@
   });
   // HTMX restores incoming class attributes during settling, after afterSwap.
   document.addEventListener('htmx:afterSettle', initializeDiff);
-  document.addEventListener('htmx:beforeSwap', event => { if (event.detail.xhr.status >= 400 && event.detail.xhr.status < 500) { event.detail.shouldSwap = true; event.detail.isError = false; } });
+  document.addEventListener('htmx:beforeSwap', event => { if (event.detail.xhr.status >= 400 && event.detail.xhr.status < 500 && event.detail.xhr.spequiGeneration === undefined) { event.detail.shouldSwap = true; event.detail.isError = false; } });
   document.addEventListener('htmx:sendError', () => toast('Could not reach the viewer. Check that the local server is running.'));
   document.addEventListener('workspace-updated', () => { pendingRefresh = true; refresh(); });
   document.addEventListener('focusout', () => { if (pendingRefresh) setTimeout(refresh, 100); });
@@ -278,11 +359,17 @@
   }, true);
   document.addEventListener('submit', event => {
     const form = event.target.closest('[data-apply-form]');
+    if (form && applyingRequest) { event.preventDefault(); event.stopImmediatePropagation(); return; }
     if (!form || form.dataset.confirmed) { if (form) delete form.dataset.confirmed; return; }
     event.preventDefault(); event.stopImmediatePropagation();
     const dialog = document.getElementById('apply-dialog');
     dialog.returnValue = ''; dialog.showModal();
-    dialog.addEventListener('close', () => { if (dialog.returnValue === 'confirm') { form.dataset.confirmed = 'true'; form.requestSubmit(); } }, { once: true });
+    const action = form.getAttribute('hx-post');
+    dialog.addEventListener('close', () => {
+      if (dialog.returnValue !== 'confirm') return;
+      const current = [...document.querySelectorAll('[data-apply-form]')].find(item => item.getAttribute('hx-post') === action);
+      if (current && !current.querySelector('button').disabled) { current.dataset.confirmed = 'true'; current.requestSubmit(); }
+    }, { once: true });
   }, true);
   let retry = 1000, hasConnected = false;
   let agentRequest;

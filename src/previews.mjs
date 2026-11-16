@@ -12,6 +12,11 @@ export function eligible(relative) {
   const parts = relative.split('/');
   return !parts.some(part => ignoredDirs.has(part) || /^\.env(?:\.|$)/.test(part) || /\.(pem|key|p12|pfx|tgz)$/i.test(part) || /^(id_rsa|id_ed25519|credentials(?:\.json)?|\.npmrc|\.netrc|\.DS_Store)$/.test(part));
 }
+export const implementationPath = file => !file.startsWith('openspec/') && path.posix.basename(file) !== 'apply-instr.json';
+const taskStates = text => text.replace(/^(\s*[-*]\s+\[)[ xX](\])/gm, '$1 $2');
+function taskUpdate(file, before, after, change) {
+  return file === `openspec/changes/${change}/tasks.md` && before && after && !before.includes(0) && !after.includes(0) && taskStates(before.toString('utf8')) === taskStates(after.toString('utf8'));
+}
 const hash = buffer => createHash('sha256').update(buffer).digest('hex');
 const basePath = (root, id) => runtime(root, 'previews', safeID(id));
 export async function createPreview(root, id) {
@@ -34,29 +39,44 @@ export async function createPreview(root, id) {
   return work;
 }
 async function getBuffer(root, file) { const absolute = await within(root, file); return await exists(absolute) ? fs.readFile(absolute) : null; }
-export async function freezePreview(root, id) {
+export async function freezePreview(root, id, { change } = {}) {
   const dir = basePath(root, id), baseline = path.join(dir, 'baseline'), work = path.join(dir, 'work'), proposed = path.join(dir, 'proposed');
   if (await exists(path.join(dir, 'result.json'))) throw new Error('This preview is already frozen');
   const manifest = await readJSON(path.join(dir, 'manifest.json'));
   if (!manifest) throw new Error('Preview baseline is missing');
   const files = new Set([...Object.keys(manifest), ...await walk(work, { filter: eligible })]);
-  const changes = [], unsupported = [];
+  const changes = [], taskUpdates = [], unsupported = [];
   await fs.mkdir(proposed, { recursive: true });
   for (const file of [...files].sort()) {
     const before = await getBuffer(baseline, file), after = await getBuffer(work, file);
     if ((before && after && before.equals(after)) || (!before && !after)) continue;
+    const tracking = !implementationPath(file);
+    if (tracking && !taskUpdate(file, before, after, change)) continue;
     if (after?.length > 2 * 1024 * 1024 || before?.length > 2 * 1024 * 1024 || before?.includes(0) || after?.includes(0)) { unsupported.push(file); continue; }
     if (after) { const target = await within(proposed, file); await fs.mkdir(path.dirname(target), { recursive: true }); await fs.writeFile(target, after, { mode: (await fs.stat(await within(work, file))).mode & 0o777 }); }
     const oldText = before?.toString('utf8') || '', newText = after?.toString('utf8') || '';
     const lines = compareLines(oldText, newText);
-    changes.push({ file, type: !before ? 'added' : !after ? 'deleted' : 'modified', beforeHash: before ? hash(before) : null, afterHash: after ? hash(after) : null, lineEndings: { before: lineEndingStyle(oldText), after: lineEndingStyle(newText) }, additions: lines.filter(part => part.added).reduce((sum, part) => sum + part.count, 0), deletions: lines.filter(part => part.removed).reduce((sum, part) => sum + part.count, 0), patch: createTwoFilesPatch(before ? `a/${file}` : '/dev/null', after ? `b/${file}` : '/dev/null', oldText, newText) });
+    (tracking ? taskUpdates : changes).push({ file, type: !before ? 'added' : !after ? 'deleted' : 'modified', beforeHash: before ? hash(before) : null, afterHash: after ? hash(after) : null, lineEndings: { before: lineEndingStyle(oldText), after: lineEndingStyle(newText) }, additions: lines.filter(part => part.added).reduce((sum, part) => sum + part.count, 0), deletions: lines.filter(part => part.removed).reduce((sum, part) => sum + part.count, 0), patch: createTwoFilesPatch(before ? `a/${file}` : '/dev/null', after ? `b/${file}` : '/dev/null', oldText, newText) });
   }
-  const result = { changes, unsupported, completedAt: new Date().toISOString(), applied: false };
+  const result = { changes, taskUpdates, unsupported, completedAt: new Date().toISOString(), applied: false };
   result.specContext = await captureSpecLinks(root, id, changes);
   await writeJSON(path.join(dir, 'result.json'), result);
   return result;
 }
-export async function previewResult(root, id) { return readJSON(path.join(basePath(root, id), 'result.json')); }
+export async function previewResult(root, id) {
+  const result = await readJSON(path.join(basePath(root, id), 'result.json'));
+  if (!result || !Array.isArray(result.changes)) return result;
+  // Older snapshots also included planning artifacts in the code review.
+  const excluded = result.changes.filter(item => !implementationPath(item.file));
+  if (excluded.length && !result.taskUpdates) {
+    result.taskUpdates = [];
+    const job = await readJSON(runtime(root, 'jobs', `${safeID(id)}.json`));
+    for (const item of excluded) if (job?.change && taskUpdate(item.file, await getBuffer(path.join(basePath(root, id), 'baseline'), item.file), await getBuffer(path.join(basePath(root, id), 'proposed'), item.file), job.change)) result.taskUpdates.push(item);
+  }
+  result.changes = result.changes.filter(item => implementationPath(item.file));
+  result.unsupported = result.unsupported.filter(implementationPath);
+  return result;
+}
 export async function previewContents(root, id, file) {
   const result = await previewResult(root, id);
   const change = result?.changes.find(change => change.file === file);
@@ -74,7 +94,8 @@ export async function applyPreview(root, id) {
     if (!result.changes.length) throw new Error('Preview contains no file changes');
     const conflicts = [], writes = [];
     const manifest = await readJSON(path.join(dir, 'manifest.json'));
-    for (const change of result.changes) {
+    const job = result.taskUpdates?.length ? await readJSON(runtime(root, 'jobs', `${safeID(id)}.json`)) : null;
+    for (const change of [...result.changes, ...(result.taskUpdates || [])]) {
       if (!eligible(change.file)) throw new Error('Preview contains an excluded path');
       const target = await within(root, change.file);
       const current = await getBuffer(root, change.file);
@@ -83,6 +104,7 @@ export async function applyPreview(root, id) {
       if ((proposed ? hash(proposed) : null) !== change.afterHash) throw new Error(`Proposed file changed after review: ${change.file}`);
       const original = await getBuffer(path.join(dir, 'baseline'), change.file);
       if ((original ? hash(original) : null) !== change.beforeHash) throw new Error('Preview baseline was modified');
+      if (!implementationPath(change.file) && !taskUpdate(change.file, original, proposed, job?.change)) throw new Error('Invalid task completion update');
       writes.push({ ...change, target, current, proposed, mode: manifest[change.file]?.mode ?? (proposed ? (await fs.stat(await within(path.join(dir, 'proposed'), change.file))).mode & 0o777 : 0o644) });
     }
     if (conflicts.length) throw new Error(`Project changed since preview. No files applied. Conflicts: ${conflicts.join(', ')}`);

@@ -87,7 +87,7 @@ test('Studio serves header stages, plan comparisons and local assets without a L
   assert.equal(document.querySelector('.workspace-modes'), null);
   assert.ok(document.querySelector('[data-requests-toggle]'));
   assert.equal(document.querySelector('#review-details'), null);
-  assert.deepEqual([...document.querySelectorAll('.compact-change-header [data-studio-stage]')].map(node => node.textContent.trim().replace(/^\d/, '')), ['Shape spec','Implement','Validate & archive']);
+  assert.deepEqual([...document.querySelectorAll('.compact-change-header [data-studio-stage]')].map(node => node.textContent.trim().replace(/^\d/, '')), ['Shape spec']);
   assert.match(document.querySelector('.studio-document').textContent, /Revised plan/);
   assert.ok(document.querySelector('.studio-revision-mark'));
   assert.match(document.querySelector('.studio-change-summary').textContent, /design.md/);
@@ -196,7 +196,7 @@ test('Studio runs the real same-session conversation, revision, preview, apply a
   assert.equal(document.querySelector('[data-apply-form] button').disabled, false);
   assert.match(await fs.readFile(path.join(root, 'app.mjs'), 'utf8'), /"old"/);
   await put(root, 'openspec/changes/flow/proposal.md', '# Changed plan after preview\n');
-  assert.equal((await get('implement')).querySelector('[data-apply-form]'), null);
+  assert.equal((await get('implement')).querySelector('[data-apply-form] button').disabled, true);
   assert.equal((await post(`/api/previews/${preview.id}/apply`)).status, 400);
   await put(root, 'openspec/changes/flow/proposal.md', proposal);
   assert.equal((await post(`/api/previews/${preview.id}/apply`)).status, 200);
@@ -277,59 +277,30 @@ test('the Studio composer sends explicit read-only intent and retains a failed d
   assert.match(replacement.querySelector('[data-lifecycle-feedback]').textContent, /Try again/);
 });
 
-test('Build browses preview-bound files in its project panel with visible file controls and no dropdown', async t => {
+test('old Build implementation links open the retained diff in Review', async t => {
   const root = await fixture(t);
-  await put(root, 'src/a/index.mjs', 'export const value = 1;\n');
-  await put(root, 'src/b/index.mjs', 'export const value = 2;\n');
-  await put(root, 'deleted.txt', 'Remove this file.\n');
+  await put(root, 'src/a.mjs', 'export const value = 1;\n');
   await enqueue(root, { action: 'preview', change: 'flow' });
   const preview = await claimNext(root, 'Session');
-  await put(preview.workingDirectory, 'src/a/index.mjs', 'export const value = 3;\n');
-  await put(preview.workingDirectory, 'src/b/index.mjs', 'export const value = 4;\n');
-  await put(preview.workingDirectory, 'long/folder/name/new-file.mjs', 'export const added = true;\n');
-  await fs.unlink(path.join(preview.workingDirectory, 'deleted.txt'));
-  await updateJob(root, preview.id, preview.claimToken, 'finish', 'Four changed files.');
-  await enqueue(root, { action: 'preview', change: 'flow' });
-  const newer = await claimNext(root, 'Session');
-  await put(newer.workingDirectory, 'newer-only.mjs', 'export default true;\n');
-  await updateJob(root, newer.id, newer.claimToken, 'finish', 'Newer preview.');
-  const viewer = await startServer({ root, port: 0, quiet: true });t.after(() => viewer.close());
-  const get = async file => parseHTML(await (await fetch(viewer.origin + '/?' + new URLSearchParams({ change: 'flow', view: 'studio', stage: 'implement', job: preview.id, file, mode: 'split', wrap: '0', q: 'flow', pane: 'conversation' }))).text()).document;
-  const document = await get('src/a/index.mjs');
-  const nav = document.querySelector('#navigation > nav');
-  assert.equal(document.querySelector('#navigation .change-link.selected').nextElementSibling.hasAttribute('data-preview-navigation'), true);
-  assert.equal(nav.firstElementChild.hasAttribute('data-project-changes'), true);
-  assert.equal(document.querySelector('#studio-file-picker'), null);
-  const files = [...document.querySelectorAll('.studio-changed-files [data-file-path]')];
-  assert.equal(files.length, 4);
-  assert.equal(files.filter(node => node.querySelector('.changed-file-basename').textContent === 'index.mjs').length, 2);
-  assert.equal(document.querySelector('.studio-changed-files [aria-current=page]').dataset.filePath, 'src/a/index.mjs');
-  assert.equal(document.querySelector('[data-file-heading]').textContent, 'index.mjs');
-  assert.equal(document.querySelector('.diff-file-path').textContent, 'src/a');
-  assert.equal(document.querySelector('[data-file-heading]').getAttribute('title'), 'src/a/index.mjs');
-  assert.equal(document.querySelector('.diff-file-toolbar').closest('.diff-code-scroll'), null);
-  assert.ok(document.querySelector('.studio-diff-panel .diff-context-toolbar [data-diff-jump]'));
-  assert.equal(document.querySelectorAll('#file-filter').length, 0);
-  assert.equal(document.querySelector('.studio-picker [name=file]').value, 'src/a/index.mjs');
-  assert.equal(document.querySelector('.studio-picker [name=mode]').value, 'split');
-  assert.equal(document.querySelector('.studio-picker [name=wrap]').value, '0');
-  assert.equal(document.querySelector('#navigation .search [name=stage]').value, 'implement');
-  assert.equal(document.querySelector('#navigation .search [name=job]').value, preview.id);
-  assert.equal(document.querySelector('#navigation .search [name=file]').value, 'src/a/index.mjs');
-  for (const link of [...files, ...document.querySelectorAll('.diff-file-paging a')]) {
+  await put(preview.workingDirectory, 'src/a.mjs', 'export const value = 2;\n');
+  await put(preview.workingDirectory, 'src/b.mjs', 'export const added = true;\n');
+  await updateJob(root, preview.id, preview.claimToken, 'finish', 'Two files.');
+  const viewer = await startServer({ root, port: 0, quiet: true }); t.after(() => viewer.close());
+  const document = parseHTML(await (await fetch(viewer.origin + '/?' + new URLSearchParams({ change: 'flow', view: 'studio', stage: 'implement', job: preview.id, file: 'src/a.mjs', mode: 'split', wrap: '0' }))).text()).document;
+  assert.equal(document.querySelector('#workspace').dataset.workspaceMode, 'review');
+  assert.equal(document.querySelector('#workspace').dataset.view, 'preview');
+  assert.equal(document.querySelector('#studio'), null);
+  assert.equal(document.querySelectorAll('.changed-file-link').length, 2);
+  assert.equal(document.querySelector('.file-diff').dataset.diffFile, 'src/a.mjs');
+  assert.equal(document.querySelector('.file-diff').dataset.diffLayout, 'split');
+  assert.ok(document.querySelector('#file-filter'));
+  for (const link of document.querySelectorAll('.changed-file-link, .diff-file-paging a')) {
     const url = new URL(link.getAttribute('href'), viewer.origin);
-    assert.equal(url.searchParams.get('view'), 'studio');assert.equal(url.searchParams.get('stage'), 'implement');
-    assert.equal(url.searchParams.get('job'), preview.id);assert.equal(url.searchParams.get('pane'), 'document');
-    assert.equal(url.searchParams.get('mode'), 'split');assert.equal(url.searchParams.get('wrap'), '0');
-    assert.equal(url.searchParams.get('q'), 'flow');assert.equal(link.getAttribute('hx-sync'), '#workspace:replace');
+    assert.equal(url.searchParams.get('view'), 'preview');
+    assert.equal(url.searchParams.get('job'), preview.id);
+    assert.equal(url.searchParams.get('mode'), 'split');
+    assert.equal(url.searchParams.get('wrap'), '0');
   }
-  const first = await get(files[0].dataset.filePath), last = await get(files.at(-1).dataset.filePath);
-  assert.equal(first.querySelector('[aria-label="Previous file"]').disabled, true);
-  assert.equal(last.querySelector('[aria-label="Next file"]').disabled, true);
-  const review = parseHTML(await (await fetch(viewer.origin + `/?change=flow&view=preview&job=${preview.id}&file=src/a/index.mjs`)).text()).document;
-  assert.equal(review.querySelector('.studio-changed-files'), null);
-  assert.equal(review.querySelectorAll('#file-filter').length, 1);
-  assert.equal(new URL(review.querySelector('[data-file-path]').getAttribute('href'), viewer.origin).searchParams.get('view'), 'preview');
 });
 
 test('Build Files trigger focuses the selected file without a filter and preserves drawer and paging focus', async () => {
@@ -403,7 +374,7 @@ test('running progress stays visible and only an expired owner can release a sta
   const live = await cancel(csrf);assert.equal(live.status, 400);assert.match((await live.json()).error, /still responding/);
   await put(root, '.spequi/agent.json', JSON.stringify({ agent: 'Current session', sessionId: 'owner', at: Date.now() - 46000 }));
   document = await get();
-  assert.match(document.querySelector('.studio-progress').textContent, /reconnect/);
+  assert.match(document.querySelector('.studio-progress').textContent, /may still be working/);
   assert.equal(document.querySelector('[data-studio-stalled-action]').hidden, false);
   assert.match(document.querySelector('[data-studio-stalled-action]').textContent, /does not stop that process/);
   assert.equal((await cancel(csrf)).status, 200);

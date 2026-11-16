@@ -1,6 +1,6 @@
 # Offline tools and model preview
 
-These tools live under **Build > Implement > Offline analysis and preview tools** and need no attached agent.
+These tools live under **Review > Files > Plan file changes** and need no attached agent.
 
 ## Analyze affected files
 

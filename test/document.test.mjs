@@ -41,3 +41,12 @@ test('only current-version source comments are placed inline once, with other no
   assert.equal(empty.querySelector('.markdown-code-review-line'),null);
   assert.equal(empty.querySelector('[data-review-line]').dataset.reviewLine,'1');
 });
+
+test('checklist items have their own marker styling without changing ordinary list items', () => {
+  const document = render('- [ ] First task\n- [x] Completed task\n- Ordinary bullet\n');
+  const items = [...document.querySelectorAll('.markdown-review-list>li')];
+  assert.deepEqual(items.map(item => item.classList.contains('task-list-item')), [true, true, false]);
+  assert.ok(items[0].querySelector('input[disabled]'));
+  assert.ok(items[1].querySelector('input[checked]'));
+  assert.equal(items[2].querySelector('input'), null);
+});

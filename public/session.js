@@ -26,7 +26,7 @@
       const result = document.querySelector('[data-session-check-result]'); if (result) result.textContent = '';
     }
     current = agent;
-    const labels = { live:'Agent ready', connected:'Agent connected', blocked:'Queue blocked', working:'Agent working', waiting:'Awaiting your answer', unresponsive:'Agent offline', unattached:'No agent connected', unavailable:'Status unavailable' };
+    const labels = { live:'Agent ready', connected:'Agent connected', blocked:'Queue blocked', working:'Agent working', waiting:'Awaiting your answer', unresponsive:'No recent update', unattached:'No agent connected', unavailable:'Status unavailable' };
     const label = labels[agent.status] || 'Status unavailable';
     const indicator = document.getElementById('agent-indicator');
     const nameLabel = typeof agent.agent === 'string' ? agent.agent.trim() : '';
@@ -35,14 +35,14 @@
     indicator?.classList.toggle('session-online',Boolean(agent.connected));
     if (indicator) indicator.dataset.sessionState = agent.status;
     const heartbeatStopped = agent.status === 'unresponsive';
-    const hint = heartbeatStopped ? 'Heartbeat stopped. Resume Spequi in the same coding session.' : agent.at ? `${agent.agent || 'Agent'} · Last heartbeat ${new Date(agent.at).toLocaleTimeString()}` : 'Attach the spequi skill in your coding agent';
+    const hint = heartbeatStopped ? 'No recent update. The agent may still be working in the same coding session. You can check back later.' : agent.at ? `${agent.agent || 'Agent'} · Last heartbeat ${new Date(agent.at).toLocaleTimeString()}` : 'Attach the spequi skill in your coding agent';
     indicator?.setAttribute('title', hint);
     indicator?.setAttribute('aria-description', heartbeatStopped ? hint : 'Open agent status and recovery details.');
     const status = agent.status || 'unavailable';
-    const badge = text('session-state', { live:'Ready', connected:'Connected', blocked:'Blocked', working:'Working', waiting:'Answer needed', unresponsive:'Offline', unattached:'Not attached', unavailable:'Unknown' }[status] || 'Unknown');
+    const badge = text('session-state', { live:'Ready', connected:'Connected', blocked:'Blocked', working:'Working', waiting:'Answer needed', unresponsive:'No recent update', unattached:'Not attached', unavailable:'Unknown' }[status] || 'Unknown');
     if (badge) badge.dataset.state = status;
     text('session-agent-name', nameLabel || 'Spequi Agent');
-    text('session-agent-caption', { live:'Listening for your next request', connected:'Not listening for new requests', blocked:'A request needs attention', working:'Processing your request', waiting:'Waiting for your answer', unresponsive:'Session stopped responding', unattached:'No coding session connected', unavailable:'Connection status unavailable' }[status] || 'Connection status unavailable');
+    text('session-agent-caption', { live:'Listening for your next request', connected:'Not listening for new requests', blocked:'A request needs attention', working:'Processing your request', waiting:'Waiting for your answer', unresponsive:'The agent may still be working', unattached:'No coding session connected', unavailable:'Connection status unavailable' }[status] || 'Connection status unavailable');
     const timestamp = Number(agent.at), validTime = Number.isFinite(timestamp) && timestamp > 0 && !Number.isNaN(new Date(timestamp).getTime());
     const seen = text('session-last-seen', validTime ? lastSeen(timestamp) : 'Not yet');
     if (seen) { seen.title = validTime ? new Date(timestamp).toLocaleString() : 'No activity reported'; if (validTime) seen.setAttribute('datetime', new Date(timestamp).toISOString()); else seen.removeAttribute('datetime'); }
@@ -78,17 +78,17 @@
     text('session-queue-state', status === 'unavailable' || !queue ? 'Unknown' : queue.queued ? `${queue.queued} waiting` : 'Empty');
     const request = document.querySelector('[data-session-current]'); if (request) request.hidden = !active;
     text('session-current-change', active?.change || 'Project question');
-    text('session-current-state', active?.status === 'awaiting-input' ? 'Answer needed' : stalled ? 'Waiting for agent' : active?.preparing ? 'Preparing' : 'Working');
-    text('session-current-hint', active?.status === 'awaiting-input' ? 'Open Requests to answer the question.' : stalled ? 'The request is saved and waiting for its session.' : active?.origin ? 'A local preview is running. Follow progress in Requests.' : 'Follow progress in Requests.');
+    text('session-current-state', active?.status === 'awaiting-input' ? 'Answer needed' : stalled ? 'No recent update' : active?.preparing ? 'Preparing' : 'Working');
+    text('session-current-hint', active?.status === 'awaiting-input' ? 'Open Requests to answer the question.' : stalled ? 'The agent may still be working. You can check back later.' : active?.origin ? 'A local preview is running. Follow progress in Requests.' : 'Follow progress in Requests.');
     const needsHelp = !agent.connected || status === 'blocked' || status === 'connected' && !active && !agent.ready;
     const recovery = document.getElementById('session-recovery'); if (recovery) recovery.hidden = !needsHelp;
     text('session-recovery-message', status === 'unavailable' ? 'Could not read the connection status. Check the local server, then refresh.'
-      : stalled ? 'Resume Spequi in the original coding session to continue.'
+      : stalled ? 'The agent may still be working. You can check back later.'
       : status === 'blocked' ? 'Open Requests to review the queue, then resume Spequi.'
       : status === 'unattached' ? 'Start the spequi skill in your coding session to attach an agent.'
       : status === 'connected' ? 'Resume the spequi skill in your coding session to receive requests.'
       : 'Resume the spequi skill in your coding session to reconnect.');
-    const detail = text('session-recovery-detail', 'If the old session cannot resume, stop it before ending the stalled request in Requests.'); if (detail) detail.hidden = !stalled;
+    const detail = text('session-recovery-detail', 'If the old session cannot resume, stop it before ending the request in Requests.'); if (detail) detail.hidden = !stalled;
     const date = document.getElementById('mcp-report-date'), reported = Number(info.reportedAt);
     if(date) {
       const valid = Number.isFinite(reported) && reported > 0 && !Number.isNaN(new Date(reported).getTime());
@@ -120,7 +120,7 @@
       const agent = await refresh();
       const name = agent?.agent || 'Spequi Agent';
       const message = !agent ? 'Could not refresh status. Check that the local server is running and try again.'
-        : !agent.connected ? agent.status === 'unattached' ? 'No agent attached. Start the Spequi skill in your coding session.' : 'Still disconnected. Checked just now.'
+        : !agent.connected ? agent.status === 'unattached' ? 'No agent attached. Start the Spequi skill in your coding session.' : 'No recent update. The agent may still be working. Check back later.'
         : agent.ready ? `${name} is connected and ready.`
         : agent.status === 'working' ? `${name} is connected and working.`
         : agent.status === 'waiting' ? `${name} is connected and waiting for your answer.`

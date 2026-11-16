@@ -16,7 +16,7 @@ its generated planning files, after confirmation.
 
 ## Planning stages
 
-New specs and unfinished drafts show three stages in the header: **Shape spec**, **Implement**, **Validate & archive**.
+New specs and unfinished drafts stay in **Shape spec** until their required planning artifacts are ready. Choose **Finish planning** to move the change from Drafts into Review. This does not generate implementation code.
 Existing changes open in document review from the left panel. Continue a draft or open a planning request from **Requests** to return to its planning workspace.
 
 ### Shape spec
@@ -27,19 +27,22 @@ Existing changes open in document review from the left panel. Continue a draft o
 - **Planning actions** offers the next artifact or the full plan.
 - Documents are read-only in the viewer.
 
-### Implement
+### Review files
 
-- Generate an isolated preview and choose its version.
-- Browse changed files beneath the selected change in the left panel. The **Files** button brings the list into view.
+- Open **Files** in Review to generate and inspect an isolated implementation diff. The tab opens immediately with a loading indicator.
+- Reopening Files uses the saved diff without generating another implementation.
+- Browse changed files in the left panel. OpenSpec planning artifacts and `apply-instr.json` are excluded from source diffs.
 - Previous/next controls, the selected file and diff tools stay above the independently scrolling code.
-- Inspect the actual diff, then confirm **Apply reviewed preview**. A changed spec or a source conflict prevents applying.
+- Inspect the actual diff, then confirm **Apply changes**. A changed spec or a source conflict prevents applying.
 - A preview becomes stale when its planning documents change. Generate a fresh one before applying.
+
+Task checkbox updates are retained separately and applied with the reviewed code, using the same conflict checks. Other planning edits are not applied.
 
 Offline analysis, optional model proposals and patch import also live here. See [Offline tools](offline-and-model.md).
 
 ### Validate & archive
 
-Distinguishes local **spec validation** from agent **implementation verification**, and exposes sync and archive with
+Open **Workflow** in Review, or **Continue** after applying code. This distinguishes local **spec validation** from agent **implementation verification**, and exposes sync and archive with
 their normal prerequisites. Archive confirmations appear in the conversation.
 
 Status, task readiness and strict validation use the installed `openspec` CLI locally, with no agent required.
@@ -74,6 +77,7 @@ Reasoning and writing requests use the current session running the viewer skill.
 `agent ask` and waits for the app's reply with `agent input --wait 300`. The job resumes with the same ownership token.
 
 - Queued and awaiting-input requests can be cancelled.
+- A request with no recent update may still be running; check back later.
 - A running request can be ended only after its owning session's heartbeat expires. Stop the old agent in your coding tool first; ending a request does not terminate its process or undo its edits.
 - Keep the agent session attached to continue waiting work.
 

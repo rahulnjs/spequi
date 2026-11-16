@@ -117,7 +117,7 @@
     } else if (event.detail?.elt?.matches?.('a,form')) pendingFileNavigation = null;
   });
   document.addEventListener('htmx:beforeSwap', event => {
-    if (!event.detail.serverResponse || event.detail.xhr?.status >= 400) return;
+    if (event.detail.shouldSwap === false || !event.detail.serverResponse || event.detail.xhr?.status >= 400) return;
     const template = document.createElement('template'); template.innerHTML = event.detail.serverResponse;
     const incoming = template.content.querySelector('#workspace'), current = workspace();
     const fileNavigation = pendingFileNavigation && incoming?.querySelector('#studio[data-stage=implement] [data-diff-file]')?.dataset.diffFile === pendingFileNavigation.file && incoming?.querySelector('.changed-files-nav')?.dataset.previewJob === pendingFileNavigation.preview && current?.querySelector('#studio[data-stage=implement]');

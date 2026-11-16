@@ -63,6 +63,7 @@
 .split-diff-table .diff-gap{background:var(--panel)}
 @media(max-width:760px){.changed-files-nav{max-height:45dvh}.file-review-intro{padding:20px 16px}.diff-version-form select{max-width:210px}.diff-empty-state{padding:24px 12px}.diff-empty-state .empty-state{padding:20px 8px}.diff-empty-actions .button{min-height:44px}.file-review-intro .preview-actions{gap:8px}.file-review-intro .preview-actions>span{flex-basis:100%;margin-bottom:2px}.file-review-intro .button{min-height:36px}}
 /* Markdown task checkboxes stay legible even though they are read-only. */
+.prose li:has(>input[type=checkbox]),.prose li:has(>p>input[type=checkbox]),.prose li.task-list-item{list-style:none}
 .prose input[type=checkbox]{appearance:none;-webkit-appearance:none;display:inline-grid;place-content:center;inline-size:15px;block-size:15px;padding:0;border:1px solid var(--muted);border-radius:3px;background:var(--surface);opacity:1;vertical-align:-2px}
 .prose input[type=checkbox]:checked{border-color:var(--green);background:var(--green)}
 .prose input[type=checkbox]:checked::after{content:"";display:block;inline-size:12px;block-size:12px;background:var(--surface);-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3 8.5 3.5 3.5L13 4.5' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3 8.5 3.5 3.5L13 4.5' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat}
@@ -92,7 +93,7 @@
 .request-state{display:inline-flex;align-items:center;gap:5px;padding:2px 6px;border-radius:4px;background:var(--panel);color:var(--muted);font-size:10px;font-weight:500;line-height:16px;white-space:nowrap;flex-shrink:0}
 .request-state::before{content:"";width:4px;height:4px;border-radius:50%;background:currentColor;flex-shrink:0}
 .request-state[data-state=completed]{background:var(--green-bg);color:var(--green)}
-.request-state[data-state=failed],.request-state[data-state=stalled]{background:var(--red-bg);color:var(--red)}
+.request-state[data-state=failed]{background:var(--red-bg);color:var(--red)}.request-state[data-state=stalled]{background:var(--rail);color:var(--muted)}
 .request-state[data-state=running],.request-state[data-state=awaiting-input]{background:var(--accent-soft);color:var(--accent-text)}
 .request-row details{min-width:0;font-size:12px;line-height:1.65;overflow-wrap:anywhere}
 .request-row summary{display:flex;align-items:flex-start;gap:8px;min-height:24px;margin:6px 0 4px;padding:2px 0;list-style:none;cursor:pointer;color:var(--muted);border-radius:3px}

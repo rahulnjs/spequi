@@ -162,3 +162,68 @@ test('navigation aborts an older background refresh and prevents its state from 
   assert.equal(document.querySelector('.reader').scrollTop, 75, 'old refresh cannot restore a scroll position over newer navigation');
   const complete = new window.Event('htmx:afterRequest'); complete.detail = { xhr: newXHR }; document.dispatchEvent(complete);
 });
+
+test('Files activates immediately, reports load failures with retry, and rejects responses after later navigation', () => {
+  const { document, window } = session();
+  const workspace = document.getElementById('workspace');
+  workspace.classList.add('compact-workspace', 'review-details-open');
+  const tabs = document.createElement('nav');
+  tabs.innerHTML = '<a class="document-tab active" href="/?view=rendered">Proposal</a><a class="document-tab" data-files-tab href="/?view=preview" hx-get="/?view=preview" hx-target="#workspace">Files</a>';
+  workspace.querySelector('main').prepend(tabs);
+  const files = tabs.querySelector('[data-files-tab]'), proposal = tabs.firstElementChild;
+  const original = document.getElementById('draft'); original.value = 'Keep this draft';
+  const event = (name, detail) => { const value = new window.Event(name); value.detail = detail; document.dispatchEvent(value); return value; };
+  const xhr = { status: 0 };
+  event('htmx:beforeRequest', { elt: files, target: workspace, xhr });
+  assert.ok(files.classList.contains('active'));
+  assert.match(document.querySelector('.reader [role=status]').textContent, /Opening your file review/);
+  assert.equal(document.querySelector('.reader').getAttribute('aria-busy'), 'true');
+  assert.equal(document.getElementById('review-details').hidden, true);
+  xhr.status = 500;
+  assert.equal(event('htmx:beforeSwap', { xhr, shouldSwap: true }).detail.shouldSwap, false);
+  event('htmx:afterRequest', { xhr, failed: true });
+  assert.ok(document.querySelector('.files-load-error a[data-files-tab]'));
+  assert.equal(document.getElementById('draft'), original);
+  assert.equal(original.value, 'Keep this draft');
+  assert.ok(proposal.classList.contains('active'));
+  const older = { status: 200 }, newer = { status: 200 };
+  event('htmx:beforeRequest', { elt: files, target: workspace, xhr: older });
+  event('htmx:beforeRequest', { elt: proposal, target: workspace, xhr: newer });
+  assert.equal(event('htmx:beforeSwap', { xhr: older, shouldSwap: true }).detail.shouldSwap, false);
+  assert.equal(event('htmx:beforeSwap', { xhr: newer, shouldSwap: true }).detail.shouldSwap, true);
+  assert.equal(document.querySelector('.files-loading'), null);
+});
+
+test('applying shows pending feedback, prevents duplicate requests and recovers after failure', () => {
+  const { document, window } = session();
+  document.querySelector('.reader').insertAdjacentHTML('beforeend', '<form data-apply-form hx-post="/api/previews/one/apply"><button>Apply changes</button></form><div id="apply-feedback"></div>');
+  const form = document.querySelector('[data-apply-form]'), button = form.querySelector('button'), xhr = { status: 0 };
+  const event = (name, detail) => { const value = new window.Event(name, { cancelable: true }); value.detail = detail; document.dispatchEvent(value); return value; };
+  event('htmx:beforeRequest', { elt: form, xhr });
+  assert.equal(form.getAttribute('aria-busy'), 'true');
+  assert.equal(button.disabled, true); assert.match(button.textContent, /Applying changes/);
+  assert.match(document.querySelector('#apply-feedback [role=status]').textContent, /Saving the approved files/);
+  assert.equal(event('htmx:beforeRequest', { elt: form, xhr: {} }).defaultPrevented, true);
+  document.getElementById('apply-feedback').innerHTML = '<p class="error-message">Project changed since preview. No files applied.</p>';
+  xhr.status = 409; event('htmx:afterRequest', { xhr, failed: true });
+  assert.equal(button.disabled, false); assert.equal(button.textContent, 'Apply changes');
+  assert.equal(form.hasAttribute('aria-busy'), false);
+  assert.match(document.getElementById('apply-feedback').textContent, /Project changed/);
+  const retry = { status: 0 }; event('htmx:beforeRequest', { elt: form, xhr: retry });
+  event('htmx:afterRequest', { xhr: retry, failed: true });
+  assert.match(document.querySelector('#apply-feedback [role=alert]').textContent, /Refresh this review/);
+  assert.equal(button.disabled, false);
+});
+
+test('Apply confirmation uses the same preview form retained by a background refresh', () => {
+  const { document, window } = session();
+  document.querySelector('.reader').insertAdjacentHTML('beforeend', '<form data-apply-form hx-post="/api/previews/one/apply"><button>Apply changes</button></form>');
+  const original = document.querySelector('[data-apply-form]'), dialog = document.getElementById('apply-dialog');
+  dialog.showModal = () => {};
+  original.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+  const current = original.cloneNode(true); let submitted = false;
+  current.requestSubmit = () => { submitted = true; };
+  original.replaceWith(current); dialog.returnValue = 'confirm';
+  dialog.dispatchEvent(new window.Event('close'));
+  assert.equal(submitted, true); assert.equal(current.dataset.confirmed, 'true');
+});

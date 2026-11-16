@@ -142,11 +142,11 @@ test('session reporting CLI and header preserve honest status and escape MCP nam
  document.querySelector('[data-session-close]').click();assert.equal(document.querySelector('#agent-connections').hidden,true);assert.equal(active,'agent');
  const event=new window.Event('agent-status');event.detail={status:'unresponsive',connected:false,at:Date.now()-50000,mcps:{supported:true,stale:true,connectedCount:null,connections:[{name:'Local files',status:'connected'}]}};document.dispatchEvent(event);
  assert.equal(document.querySelector('#mcp-count').textContent,'MCPs');assert.match(document.querySelector('#session-mcps').textContent,/Last: Connected/);assert.equal(document.querySelector('.mcp-service-state').dataset.state,'unknown');
- assert.match(document.querySelector('#agent-indicator').textContent,/Agent offline/);assert.match(document.querySelector('#agent-indicator').getAttribute('title'),/Heartbeat stopped/);assert.match(document.querySelector('#agent-indicator').getAttribute('aria-description'),/same coding session/);assert.equal(document.querySelector('#session-recovery').hidden,false);
+ assert.match(document.querySelector('#agent-indicator').textContent,/No recent update/);assert.match(document.querySelector('#agent-indicator').getAttribute('title'),/No recent update/);assert.match(document.querySelector('#agent-indicator').getAttribute('aria-description'),/same coding session/);assert.equal(document.querySelector('#session-recovery').hidden,false);
  document.querySelector('[data-session-refresh]').click();await new Promise(r=>setTimeout(r,0));assert.equal(document.querySelector('#session-recovery').hidden,true);
  const zero=new window.Event('agent-status');zero.detail={status:'live',connected:true,mcps:{supported:true,stale:false,connectedCount:0,connections:[]}};document.dispatchEvent(zero);assert.equal(document.querySelector('#mcp-count').textContent,'0 MCPs');
  const working=new window.Event('agent-status');working.detail={status:'working',connected:true,agent:'GigaCode CLI',mcps:{supported:false,stale:false,connections:[],connectedCount:null}};document.dispatchEvent(working);assert.equal(document.querySelector('#agent-indicator').textContent,'GigaCode CLI · Working');
- working.detail={...working.detail,status:'unresponsive',connected:false};document.dispatchEvent(working);assert.equal(document.querySelector('#agent-indicator').textContent,'Agent offline');
+ working.detail={...working.detail,status:'unresponsive',connected:false};document.dispatchEvent(working);assert.equal(document.querySelector('#agent-indicator').textContent,'No recent update');
 });
 
 test('slash input routes to the command endpoint while failed drafts remain intact',async()=>{

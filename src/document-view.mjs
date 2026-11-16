@@ -50,7 +50,7 @@ export function renderReviewMarkdown(source, { sourceHash, comments = [], icon }
         if (at < 0) return html; // Preserve content if an extension changes raw spans.
         itemCursor = at + item.raw.length;
         const inner = html.replace(/^<(?:ul|ol)(?:\s[^>]*)?>\s*<li(?:\s[^>]*)?>/, '').replace(/<\/li>\s*<\/(?:ul|ol)>\s*$/, '');
-        return `<li>${block(inner, lineAt(offset + at), lineAt(offset + at + Math.max(0, item.raw.replace(/\n+$/, '').length - 1)))}</li>`;
+        return `<li${item.task ? ' class="task-list-item"' : ''}>${block(inner, lineAt(offset + at), lineAt(offset + at + Math.max(0, item.raw.replace(/\n+$/, '').length - 1)))}</li>`;
       }).join('');
       return token.ordered ? `<ol start="${Number(token.start) || 1}" class="markdown-review-list">${items}</ol>` : `<ul class="markdown-review-list">${items}</ul>`;
     }

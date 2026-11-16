@@ -29,6 +29,4 @@ The attached agent may send project context to its own provider. Optional model 
 
 - A preview copy is **not an OS security sandbox**. The agent must honor its assigned working directory.
 - Static impact evidence does not establish complete runtime behavior, dynamic references, aliases or external-package effects. Scan limitations stay visible in the UI.
-- Native Windows execution is a release verification item.
-- Continuous polling in a real GigaCode session has not been verified.
 - Agent attachment depends on the host agent resuming its session when background work completes.

@@ -36,7 +36,7 @@ export async function requestCommand(root,{command,change='',requestKey},options
   }
   return result;
 }
-export function renderCommandPicker(state,{icon=()=>''}={}){
+export function renderCommandPicker(state,{icon=()=>'',planningOnly=false}={}){
   const change=state.selected.id;
   const jobs=state.jobs||[];
   const completed=jobs.filter(job=>job.status==='completed').sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
@@ -48,6 +48,7 @@ export function renderCommandPicker(state,{icon=()=>''}={}){
   else if(state.pending)notice=state.pending.status==='awaiting-input'?'Answer the current question to continue.':'Waiting for the current request to finish.';
   else if(state.error||!state.readiness)next='status';
   else if(!state.readiness.planningComplete)next=state.readiness.nextArtifact?'continue':'propose';
+  else if(planningOnly)notice='The plan is ready. Finish planning to open Review.';
   else if(state.actions.apply?.enabled)notice='Review and apply the file diff to continue.';
   else if((!state.result||state.previewStale||!state.result.changes.length||state.result.unsupported.length)&&state.actions.preview?.enabled)next='apply';
   else if(!state.validation||state.validation.stale)next='validate';

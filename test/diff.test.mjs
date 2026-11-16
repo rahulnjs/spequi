@@ -113,6 +113,11 @@ test('review routes render highlighted folded code, wrapping controls, paging, a
   assert.equal(document.querySelector('#review-details [data-apply-form],#review-details .workflow-form,#review-details .activity-section'), null);
   for (const tab of document.querySelectorAll('.document-tab')) {
     const { document: next } = parseHTML(await (await fetch(viewer.origin + tab.getAttribute('href'))).text());
+    if (next.querySelector('#workspace').dataset.view === 'workflow') {
+      assert.equal(next.querySelector('#workspace').dataset.workspaceMode, 'review');
+      assert.ok(next.querySelector('.studio-finish'));
+      continue;
+    }
     assert.ok(next.querySelector('.details-icon-toggle[aria-expanded="true"]'));
     assert.ok(next.querySelector('.compact-change-header>.breadcrumbs+.document-tabs'));
     assert.equal(next.querySelector('#review-details .workflow-form,#review-details .activity-section,#review-details .preview-details'), null);

@@ -1,7 +1,7 @@
 (() => {
   const panel = () => document.getElementById('requests-panel');
   const workspace = () => document.getElementById('workspace');
-  const labels = { stalled: 'Stalled', queued: 'Queued', running: 'Working', 'awaiting-input': 'Answer needed', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled' };
+  const labels = { stalled: 'No recent update', queued: 'Queued', running: 'Working', 'awaiting-input': 'Answer needed', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled' };
   const actions = { 'start-plan': 'New spec', 'plan-next': 'Next artifact', 'revise-plan': 'Spec revision', preview: 'Implementation preview', verify: 'Verification', explore: 'Question', 'update-specs': 'Review feedback', impact: 'File impact', archive: 'Archive' };
   let page = 1, pages = 1, opener, activityPending, activityAgain = false, agent = {}, listGeneration = 0;
   const saves = new Map(), saved = new Map(), saveFailures = new Map(), deletedDrafts = new Set();
@@ -46,7 +46,7 @@
   function openLink(job) {
     const stage = ['preview', 'impact'].includes(job.action) ? 'implement' : ['verify', 'sync-specs', 'archive'].includes(job.action) ? 'finish' : 'shape';
     const query = job.action === 'start-plan' ? { view: 'studio', new: '1', creation: job.id } : {
-      change: job.change || '', view: 'studio', stage,
+      change: job.change || '', view: stage === 'shape' ? 'studio' : job.status === 'completed' && ['preview', 'impact'].includes(job.action) ? 'preview' : 'workflow', ...(stage === 'shape' ? { stage } : {}),
       ...(job.status === 'awaiting-input' ? { pane: 'conversation' } : {}),
       ...(job.action === 'preview' ? { job: job.id } : {}),
       ...(job.action === 'impact' ? { job: job.reviewPreview, file: job.reviewFile } : {})
@@ -98,12 +98,13 @@
     for (const item of job.logs?.slice(-30) || []) log.append(node('li', item.message));
     if (log.children.length) body.append(node('h3', 'Activity'), log);
     if (job.result) body.append(node('h3', 'Result'), node('p', job.result, 'request-result'));
+    if (job.stalled) body.prepend(node('p', 'The agent may still be working. You can check back later.', 'request-status-note'));
     detail.append(body); row.append(detail);
     const footer = node('div', undefined, 'request-footer'), meta = node('div', undefined, 'request-meta');
     const kind = node('span', actions[job.action] || job.action, 'request-kind'); kind.title = kind.textContent;
     meta.append(kind, requestTime(job.updatedAt));
     const controls = node('div', undefined, 'request-controls'); controls.append(openLink(job));
-    if (['queued', 'awaiting-input'].includes(job.status) || job.status === 'running' && !job.origin && agent.queue?.active?.id === job.id && !agent.queue.active.ownerConnected) controls.append(button(job.status === 'running' ? 'End stalled request' : 'Cancel request', 'cancel', job.id));
+    if (['queued', 'awaiting-input'].includes(job.status) || job.status === 'running' && !job.origin && agent.queue?.active?.id === job.id && !agent.queue.active.ownerConnected) controls.append(button(job.status === 'running' ? 'End request' : 'Cancel request', 'cancel', job.id));
     if (['failed', 'cancelled'].includes(job.status) && ['explore', 'preview', 'verify', 'impact'].includes(job.action)) controls.append(button('Retry', 'retry', job.id));
     if (!['queued', 'running', 'awaiting-input'].includes(job.status)) {
       const control = button(history ? 'Delete…' : 'Dismiss', history ? 'delete' : 'dismiss', job.id);

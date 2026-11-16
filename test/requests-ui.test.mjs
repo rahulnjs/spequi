@@ -42,13 +42,13 @@ test('Open request uses the shared spec workspace at the relevant stage and reta
   for (const [index, [action, status, stage]] of cases.entries()) {
     const link = document.querySelectorAll('.request-controls a')[index];
     const query = new URL(link.getAttribute('href'), 'http://localhost').searchParams;
-    assert.equal(query.get('view'), 'studio', `${action} ${status} reuses the spec workspace`);
+    assert.equal(query.get('view'), action === 'start-plan' || stage === 'shape' ? 'studio' : status === 'completed' && ['preview', 'impact'].includes(action) ? 'preview' : 'workflow');
     if (action === 'start-plan') {
       assert.equal(query.get('creation'), requests[index].id);
       assert.equal(query.get('new'), '1');
     } else {
       assert.equal(query.get('change'), 'feature');
-      assert.equal(query.get('stage'), stage);
+      assert.equal(query.get('stage'), stage === 'shape' ? stage : null);
       if (status === 'awaiting-input') assert.equal(query.get('pane'), 'conversation');
     }
     if (action === 'preview') assert.equal(query.get('job'), requests[index].id);
