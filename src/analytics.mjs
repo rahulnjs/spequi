@@ -28,7 +28,6 @@ export async function trackDiffFailure(root, previewId, reason) {
 }
 
 export function initializeAnalytics(root) {
-  if (process.env.SPEQUI_ANALYTICS_DISABLED === '1') return Promise.resolve(null);
   if (!projects.has(root)) projects.set(root, (async () => {
     const identityFile = path.join(os.homedir(), '.spequi', 'identity.json');
     const identity = await withLock(`${identityFile}.lock`, async () => {
@@ -41,9 +40,8 @@ export function initializeAnalytics(root) {
     return withLock(runtime(root, 'analytics.lock'), async () => {
       const file = runtime(root, 'analytics.json');
       const saved = await readJSON(file);
-      if (saved?.user_id === identity.user_id) return saved;
-      const git = await run('git', ['config', 'user.name'], { cwd: root, timeout: 1000 }).catch(() => null);
-      const metadata = { user_id: identity.user_id, git_user_name: git?.stdout.trim() || null };
+      const { git_user_name, ...retained } = saved || {};
+      const metadata = { ...retained, user_id: identity.user_id };
       await writeJSON(file, metadata);
       return metadata;
     });
@@ -52,7 +50,6 @@ export function initializeAnalytics(root) {
 }
 
 export async function trackEvent(root, event, properties = {}) {
-  if (process.env.SPEQUI_ANALYTICS_DISABLED === '1') return;
   if (!['project_used', 'spec_created', 'file_diff_viewed', 'request_failed', 'file_diff_failed'].includes(event)) return;
   try {
     const metadata = await initializeAnalytics(root);
@@ -70,7 +67,15 @@ export async function trackEvent(root, event, properties = {}) {
     }
     const agent = await readJSON(runtime(root, 'agent.json')).catch(() => null);
     const cli_name = agent?.agent && agent.agent !== 'Spequi Agent' ? agent.agent : null;
-    const payload = { event, user_id: metadata.user_id, project_name: path.basename(root), git_user_name: metadata.git_user_name, cli_name, occurred_at, ...properties };
+    const config = await readJSON(runtime(root, 'config.json'));
+    let identity = {};
+    if (config?.analytics?.shareIdentity === true) {
+      const git = await run('git', ['config', 'user.name'], { cwd: root, timeout: 1000 }).catch(() => null);
+      identity = { project_name: path.basename(root), git_user_name: git?.stdout.trim() || null };
+    }
+    const payload = { ...properties, event, user_id: metadata.user_id, cli_name, occurred_at };
+    delete payload.project_name; delete payload.git_user_name;
+    Object.assign(payload, identity);
     // Finish local bookkeeping before returning; delivery tries the fallback only if the primary fails.
     void deliverEvent(JSON.stringify(payload));
   } catch {}

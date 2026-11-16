@@ -36,10 +36,10 @@ Then invoke the Spequi skill **inside your coding agent**, with the same project
 
 | Agent | Run after `init` |
 | --- | --- |
-| GigaCode CLI | `/skills spequi` or `/spequi` |
 | Claude Code | `/spequi` |
 | Codex | `$spequi` |
 | Other skill-capable agents | load `.agents/skills/spequi/SKILL.md` |
+| GigaCode CLI | `/skills spequi` or `/spequi` |
 
 The skill starts the local server, shares its URL, and handles requests from the UI. Open the URL it provides, normally **http://127.0.0.1:4310**. Keep the agent session running while you work. Reload your agent if the new skill does not appear.
 
@@ -53,27 +53,32 @@ A plain diff shows **what** changed, not **why**.
 
 - **Spec-linked diffs.** Linked code blocks show the requirement or scenario behind them, with source path and line range. Link coverage depends on the preview; suggested file-level context is labelled separately.
 - **Review implementation before applying.** Implementation previews use an isolated copy. Applying is a separate, explicit step with conflict checks and backups. Planning requests update specification files in your project.
-- **Bring your own agent.** GigaCode, Claude Code, Codex, or any skill-capable agent. No extra model endpoint or provider API key to configure.
+- **Bring your own agent.** Claude Code, Codex, GigaCode, or any skill-capable agent. No extra model endpoint or provider API key to configure.
 - **Local workspace.** The UI binds to `127.0.0.1`. Browsing and offline analysis do not upload source. Your attached agent may send source to its provider; optional model generation sends selected context to your configured endpoint.
 
-Spequi sends usage and failure analytics, including project folder names, Git user names when configured, and a persistent identifier shared across projects on the same machine account. Source files, prompts, and review comments are excluded. See [Security and limits](docs/security.md#analytics).
+Spequi sends usage and failure analytics with a persistent identifier shared across projects on the same machine account. Project folder names and Git user names are excluded unless you opt in for that project during `spequi init`. Source files, prompts, and review comments are excluded. See [Security and limits](docs/security.md#analytics).
 
 ## How it works
 
-1. **Plan.** Click **New spec**, describe an idea, and shape the plan beside your agent's conversation. Drafts save automatically.
-2. **Preview.** Open **Implement** and request a preview. The agent builds in a separate copy of your project.
-3. **Review.** Read Proposal, Design and Tasks, then inspect real diffs with available spec links, dependency impact, and inline comments.
-4. **Apply.** Confirm explicitly. Spequi checks hashes and baseline conflicts, writes the files, and keeps recoverable backups. Then validate and archive.
+1. **Plan.** Click **New spec**, describe an idea, and optionally name a Git branch. Generate the next artifact or the full proposal, specs, design and tasks. Planning stops before implementation; drafts save automatically.
+2. **Generate.** Open **Files** and choose **Generate file diff**. The agent makes the spec’s file changes in an isolated copy, without running validation, builds, linters or tests. Test files change only when the specs require them.
+3. **Review.** Read the agent’s change summary and inspect the diff with recorded spec links, changed-line link coverage, suggested context, dependency impact and inline comments.
+4. **Apply and finish.** Apply explicitly with baseline conflict checks and recoverable backups. **Workflow** stays beside the artifact tabs and explains optional validation, verification, sync and archive actions.
 
 ## Features
 
-- **Full lifecycle:** drafts, spec refinement, implementation preview, validate, archive
+- **Planning boundaries:** next-artifact and full-plan requests create planning documents only
+- **Branch per change:** create or switch branches before the agent starts, including spec creation; confirm reuse of an existing branch
+- **Spec-linked review:** agent summaries, linked requirements and scenarios, and visible changed-line coverage
 - **Unified and split diffs** with syntax highlighting, changed-word emphasis, folding and wrapping
 - **Impact analysis:** direct and downstream dependencies, related tests, export changes
 - **Precise feedback:** comments on files, code ranges and Markdown passages; export a review brief or queue a spec update
-- **Requests inbox:** see questions, failures and running work across all specs
-- **Works offline:** browsing, review, affected-file analysis and patch import need no agent
+- **Questions where you need them:** read and answer directly in Agent or Requests; cancel an obsolete waiting request to free the queue
+- **Optional desktop notifications:** use the header bell for completed plans and diffs, questions, and failures while you’re in another tab; keep the workspace open
+- **Works offline:** browsing, review and affected-file analysis need no attached agent
 - **Light and dark themes**
+
+Spequi questions and workflow confirmations appear in the UI. Native file-edit and tool-execution approvals stay in your coding agent’s CLI or host; the generic skill connection does not intercept them. Check that session if progress pauses.
 
 ## Documentation
 
@@ -82,7 +87,7 @@ Spequi sends usage and failure analytics, including project folder names, Git us
 | [Getting started](docs/getting-started.md) | Install, initialize, attach an agent, what `init` creates |
 | [Planning workflow](docs/planning.md) | New specs, drafts, slash commands, planning stages |
 | [Review workflow](docs/review.md) | Diffs, spec context, comments, requests inbox |
-| [Offline tools and model preview](docs/offline-and-model.md) | Affected-file analysis, patch import, optional model endpoint |
+| [Offline tools and model preview](docs/offline-and-model.md) | Affected-file analysis, optional model endpoint, patch API |
 | [Agent workflow](docs/agent-workflow.md) | Queue, heartbeat, questions, MCP reports |
 | [Security and limits](docs/security.md) | Local data, boundaries, known limitations |
 | [Architecture](docs/architecture.md) | Stack, repo layout, development, packaging |

@@ -69,7 +69,7 @@ export async function captureSpecLinks(root, id, changes) {
     if (!stat) return empty;
     if (!stat.isFile() || stat.size > 65536) return { ...empty, invalidReport: true };
     const report = JSON.parse(await fs.readFile(reportFile, 'utf8'));
-    if (report?.version !== 1 || !Array.isArray(report.links) || report.links.length > 100) return { ...empty, invalidReport: true };
+    if (report?.version !== 1 || !Array.isArray(report.links) || report.links.length > 800) return { ...empty, invalidReport: true };
     const saved = await snapshot(root, id), fileRows = new Map(), seen = new Set();
     for (const reference of report.links) {
       const file = changes.find(item => item.file === reference?.file);
@@ -109,28 +109,28 @@ async function suggestions(saved, file, rows) {
     for (let index = 0; index < sections.length; index++) {
       const section = sections[index];
       // A requirement owns its scenarios; avoid repeating the same quote for its child headings.
-      if (section.depth > 3) continue;
-      const nextSection = sections.slice(index + 1).find(next => next.depth <= 3);
+      if (section.depth > 4) continue;
+      const nextSection = sections.slice(index + 1).find(next => next.depth <= section.depth);
       const end = Math.min(nextSection ? nextSection.start - 1 : source.lines.length, section.start + 79);
       const text = source.lines.slice(section.start - 1, end).join('\n');
       const symbols = [...text.matchAll(/`([A-Za-z_$][\w$]{3,})`/g)].map(match => match[1]).filter(value => identifiers.has(value) && !['true', 'false', 'null', 'const', 'return', 'function', 'string', 'number', 'boolean'].includes(value));
       const paths = [...text.matchAll(/(?:`|\b)([A-Za-z0-9_./-]+\.[A-Za-z0-9]+)(?:`|\b)/g)].map(match => match[1]);
       const explicit = paths.includes(file.file), filename = uniqueName && paths.includes(basename);
-      if (!explicit && !filename && !symbols.length) continue;
-      const reference = quote(source, { spec: name, specStart: section.start, specEnd: end, specHash: source.hash, reason: explicit ? 'File path mentioned' : filename ? 'Unique filename mentioned' : `Changed symbol: ${symbols[0]}` }, 'suggested');
-      if (reference) candidates.push({ ...reference, score: explicit ? 3 : filename ? 2 : 1 });
+      const symbolMatches = [...new Set(symbols)];
+      if (!explicit && !filename && !symbolMatches.length) continue;
+      const reference = quote(source, { spec: name, specStart: section.start, specEnd: end, specHash: source.hash, reason: explicit ? 'File path mentioned' : filename ? 'Unique filename mentioned' : `Changed symbol: ${symbolMatches.slice(0, 3).join(', ')}` }, 'suggested');
+      if (reference) candidates.push({ ...reference, score: (explicit ? 12 : filename ? 8 : 0) + Math.min(symbolMatches.length, 4) + (/\/specs\//.test(name) ? 2 : 0) });
     }
   }
   return candidates.sort((a, b) => b.score - a.score || a.spec.localeCompare(b.spec) || a.specStart - b.specStart).slice(0, 2);
 }
 
-export async function specContextForFile(root, job, file, result, before, after) {
+export async function specContextForFile(root, job, file, result, before, after, rows = buildDiffRows(before, after).split) {
   const context = { links: [], suggestions: [], notice: '' };
   try {
     const saved = await snapshot(root, job.id);
     const verified = (hash, text) => hash ? hash === digest(text) : text === '';
     if (!verified(file.beforeHash, before) || !verified(file.afterHash, after)) return { ...context, notice: 'The saved code changed; spec context cannot be verified.' };
-    const rows = buildDiffRows(before, after).split;
     const records = result.specContext?.version === 1 ? result.specContext.links || [] : [];
     for (const reference of records.filter(item => item.file === file.file).slice(0, 8)) {
       const source = await saved.source(reference.spec);
@@ -141,6 +141,9 @@ export async function specContextForFile(root, job, file, result, before, after)
       else context.notice = 'Some spec links could not be verified against this preview.';
     }
     if (result.specContext?.invalidReport || result.specContext?.invalidFiles?.includes(file.file)) context.notice = 'Some recorded spec links were invalid and are not shown.';
+    const changedLines = rows.flatMap(row => [row.before?.type === 'deletion' ? { side: 'current', number: row.before.number } : null, row.after?.type === 'addition' ? { side: 'proposed', number: row.after.number } : null].filter(Boolean));
+    const linked = changedLines.filter(line => context.links.some(reference => reference.side === line.side && line.number >= reference.start && line.number <= reference.end)).length;
+    context.coverage = { linked, total: changedLines.length, requirements: new Set(context.links.map(specLinkKey)).size };
     if (!context.links.length) context.suggestions = await suggestions(saved, file, rows);
     return context;
   } catch { return { ...context, notice: 'The retained spec snapshot is unavailable for this preview.' }; }

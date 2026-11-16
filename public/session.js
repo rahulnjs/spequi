@@ -3,14 +3,16 @@
   const panels = () => document.querySelectorAll('#agent-connections, #mcp-connections');
   function close() { for(const panel of panels()) panel.hidden = true; for(const button of document.querySelectorAll('[data-session-toggle]')) button.setAttribute('aria-expanded','false'); }
   function positionMCP() {
-    const panel = document.getElementById('mcp-connections'), button = document.querySelector('.session-mcp-button');
-    if (!panel || panel.hidden || !button?.getBoundingClientRect || !window.innerWidth) return;
-    const anchor = button.getBoundingClientRect(), header = button.closest('.topbar')?.getBoundingClientRect();
-    const gutter = window.innerWidth <= 520 ? 8 : 16, width = panel.getBoundingClientRect().width;
-    const top = Math.max(gutter, Math.max(anchor.bottom, header?.bottom || 0) + 8);
-    panel.style.left = `${Math.round(Math.max(gutter, Math.min(anchor.right - width, window.innerWidth - width - gutter)))}px`;
-    panel.style.right = 'auto'; panel.style.top = `${Math.round(top)}px`;
-    panel.style.maxHeight = `${Math.max(0, window.innerHeight - top - gutter)}px`;
+    for (const panel of panels()) {
+      const button = document.querySelector(`[data-session-toggle][aria-controls="${panel.id}"]`);
+      if (panel.hidden || !button?.getBoundingClientRect || !window.innerWidth) continue;
+      const anchor = button.getBoundingClientRect(), header = button.closest('.topbar')?.getBoundingClientRect();
+      const gutter = window.innerWidth <= 520 ? 8 : 16, width = panel.getBoundingClientRect().width;
+      const top = Math.max(gutter, Math.max(anchor.bottom, header?.bottom || 0) + 8);
+      panel.style.left = `${Math.round(Math.max(gutter, Math.min(anchor.right - width, window.innerWidth - width - gutter)))}px`;
+      panel.style.right = 'auto'; panel.style.top = `${Math.round(top)}px`;
+      panel.style.maxHeight = `${Math.max(0, window.innerHeight - top - gutter)}px`;
+    }
   }
   function text(id, value) { const node = document.getElementById(id); if (node) node.textContent = value; return node; }
   function lastSeen(at) {
@@ -27,22 +29,25 @@
     }
     current = agent;
     const labels = { live:'Agent ready', connected:'Agent connected', blocked:'Queue blocked', working:'Agent working', waiting:'Awaiting your answer', unresponsive:'No recent update', unattached:'No agent connected', unavailable:'Status unavailable' };
-    const label = labels[agent.status] || 'Status unavailable';
+    const running = agent.queue?.active?.status === 'running';
+    const waiting = agent.queue?.active?.status === 'awaiting-input';
+    const label = waiting ? 'Answer needed' : (running && agent.status === 'unresponsive' ? 'Request in progress' : labels[agent.status]) || 'Status unavailable';
     const indicator = document.getElementById('agent-indicator');
     const nameLabel = typeof agent.agent === 'string' ? agent.agent.trim() : '';
-    const stateLabel = { live:'Ready', connected:'Connected', blocked:'Queue blocked', working:'Working', waiting:'Answer needed' }[agent.status];
+    const stateLabel = waiting ? 'Answer needed' : { live:'Ready', connected:'Connected', blocked:'Queue blocked', working:'Working', waiting:'Answer needed' }[agent.status];
     for(const node of document.querySelectorAll('[data-session-label]')) node.textContent = indicator?.contains(node) && agent.connected && nameLabel && stateLabel ? `${nameLabel} · ${stateLabel}` : label;
     indicator?.classList.toggle('session-online',Boolean(agent.connected));
-    if (indicator) indicator.dataset.sessionState = agent.status;
+    if (indicator) indicator.dataset.sessionState = waiting ? 'waiting' : agent.status;
     const heartbeatStopped = agent.status === 'unresponsive';
-    const hint = heartbeatStopped ? 'No recent update. The agent may still be working in the same coding session. You can check back later.' : agent.at ? `${agent.agent || 'Agent'} · Last heartbeat ${new Date(agent.at).toLocaleTimeString()}` : 'Attach the spequi skill in your coding agent';
+    const hint = heartbeatStopped ? 'Longer requests can take a few minutes. The result will appear here when ready. Check your CLI for permissions or other actions waiting for you.' : agent.at ? `${agent.agent || 'Agent'} · Last heartbeat ${new Date(agent.at).toLocaleTimeString()}` : 'Attach the spequi skill in your coding agent';
     indicator?.setAttribute('title', hint);
     indicator?.setAttribute('aria-description', heartbeatStopped ? hint : 'Open agent status and recovery details.');
     const status = agent.status || 'unavailable';
-    const badge = text('session-state', { live:'Ready', connected:'Connected', blocked:'Blocked', working:'Working', waiting:'Answer needed', unresponsive:'No recent update', unattached:'Not attached', unavailable:'Unknown' }[status] || 'Unknown');
-    if (badge) badge.dataset.state = status;
+    const displayStatus = waiting ? 'waiting' : status;
+    const badge = text('session-state', { live:'Ready', connected:'Connected', blocked:'Blocked', working:'Working', waiting:'Answer needed', unresponsive:running ? 'In progress' : 'No recent update', unattached:'Not attached', unavailable:'Unknown' }[displayStatus] || 'Unknown');
+    if (badge) badge.dataset.state = displayStatus;
     text('session-agent-name', nameLabel || 'Spequi Agent');
-    text('session-agent-caption', { live:'Listening for your next request', connected:'Not listening for new requests', blocked:'A request needs attention', working:'Processing your request', waiting:'Waiting for your answer', unresponsive:'The agent may still be working', unattached:'No coding session connected', unavailable:'Connection status unavailable' }[status] || 'Connection status unavailable');
+    text('session-agent-caption', { live:'Listening for your next request', connected:'Not listening for new requests', blocked:'A request needs attention', working:'Processing your request', waiting:'Waiting for your answer', unresponsive:running ? 'Request in progress; check your CLI if it pauses' : 'No recent agent heartbeat', unattached:'No coding session connected', unavailable:'Connection status unavailable' }[status] || 'Connection status unavailable');
     const timestamp = Number(agent.at), validTime = Number.isFinite(timestamp) && timestamp > 0 && !Number.isNaN(new Date(timestamp).getTime());
     const seen = text('session-last-seen', validTime ? lastSeen(timestamp) : 'Not yet');
     if (seen) { seen.title = validTime ? new Date(timestamp).toLocaleString() : 'No activity reported'; if (validTime) seen.setAttribute('datetime', new Date(timestamp).toISOString()); else seen.removeAttribute('datetime'); }
@@ -78,12 +83,28 @@
     text('session-queue-state', status === 'unavailable' || !queue ? 'Unknown' : queue.queued ? `${queue.queued} waiting` : 'Empty');
     const request = document.querySelector('[data-session-current]'); if (request) request.hidden = !active;
     text('session-current-change', active?.change || 'Project question');
-    text('session-current-state', active?.status === 'awaiting-input' ? 'Answer needed' : stalled ? 'No recent update' : active?.preparing ? 'Preparing' : 'Working');
-    text('session-current-hint', active?.status === 'awaiting-input' ? 'Open Requests to answer the question.' : stalled ? 'The agent may still be working. You can check back later.' : active?.origin ? 'A local preview is running. Follow progress in Requests.' : 'Follow progress in Requests.');
+    text('session-current-state', active?.status === 'awaiting-input' ? 'Answer needed' : stalled ? 'In progress · check CLI' : active?.preparing ? 'Preparing' : 'Working');
+    text('session-current-hint', active?.status === 'awaiting-input' ? active.question ? 'Answer below to continue this request.' : 'The saved question is unavailable. Open the request, or cancel it to free the queue.' : stalled ? 'This can take a few minutes. Results appear here when ready. Check your CLI for permissions or other actions waiting for you.' : active?.origin ? 'A local preview is running. Follow progress in Requests.' : 'Follow progress in Requests.');
+    const questionHost = document.getElementById('session-question');
+    const question = active?.question;
+    if (questionHost) {
+      questionHost.hidden = !question || !waiting;
+      const key = question ? `${active.id}:${question.id}` : '';
+      if (key !== questionHost.dataset.questionKey) {
+        questionHost.dataset.questionKey = key;
+        questionHost.replaceChildren();
+        if (question && waiting) questionHost.append(window.spequiQuestionForm(active, question, 'agent'));
+      }
+    }
+    const cancel = document.getElementById('session-cancel-request');
+    if (cancel) {
+      cancel.hidden = !waiting;
+      if (waiting) cancel.setAttribute('action', `/api/jobs/${encodeURIComponent(active.id)}/cancel`);
+    }
     const needsHelp = !agent.connected || status === 'blocked' || status === 'connected' && !active && !agent.ready;
     const recovery = document.getElementById('session-recovery'); if (recovery) recovery.hidden = !needsHelp;
-    text('session-recovery-message', status === 'unavailable' ? 'Could not read the connection status. Check the local server, then refresh.'
-      : stalled ? 'The agent may still be working. You can check back later.'
+    text('session-recovery-message', waiting && !active?.ownerConnected ? 'Your reply will be saved. Resume the same coding session to continue, or cancel this request to free the queue.' : status === 'unavailable' ? 'Could not read the connection status. Check the local server, then refresh.'
+      : stalled ? 'This can take a few minutes. Results appear here when ready. Check your CLI for permissions or other actions waiting for you.'
       : status === 'blocked' ? 'Open Requests to review the queue, then resume Spequi.'
       : status === 'unattached' ? 'Start the spequi skill in your coding session to attach an agent.'
       : status === 'connected' ? 'Resume the spequi skill in your coding session to receive requests.'
@@ -120,7 +141,7 @@
       const agent = await refresh();
       const name = agent?.agent || 'Spequi Agent';
       const message = !agent ? 'Could not refresh status. Check that the local server is running and try again.'
-        : !agent.connected ? agent.status === 'unattached' ? 'No agent attached. Start the Spequi skill in your coding session.' : 'No recent update. The agent may still be working. Check back later.'
+        : !agent.connected ? agent.status === 'unattached' ? 'No agent attached. Start the Spequi skill in your coding session.' : 'Check your coding session for permissions or other actions waiting for you.'
         : agent.ready ? `${name} is connected and ready.`
         : agent.status === 'working' ? `${name} is connected and working.`
         : agent.status === 'waiting' ? `${name} is connected and waiting for your answer.`

@@ -52,7 +52,7 @@
   }
   function initialize() {
     if (!workspace()) return;
-    if (workspace().dataset.creationComplete === 'true') window.history?.replaceState(null, '', canonical());
+    if (workspace().dataset.creationComplete === 'true' || workspace().dataset.artifactFollowComplete === 'true') window.history?.replaceState(null, '', canonical());
     const saved = state(), currentMode = mode();
     saved[currentMode] = canonical();
     const studio = document.getElementById('studio');

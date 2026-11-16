@@ -45,11 +45,12 @@ export async function installSkill(root, global = false) {
   await fs.writeFile(gigacodeCommand, gigacodeContent);
   return { skill: target, command, gigacode: { skill: gigacodeSkill, command: gigacodeCommand } };
 }
-export async function initProject(root) {
+export async function initProject(root, { shareIdentity } = {}) {
   root = await fs.realpath(root);
   for (const folder of ['jobs', 'previews', 'backups']) await fs.mkdir(runtime(root, folder), { recursive: true });
   const config = await readJSON(runtime(root, 'config.json')) || { version: 1, port: 4310, openspecDir: 'openspec' };
-  if (config.viewerVersion !== viewerVersion) await writeJSON(runtime(root, 'config.json'), { ...config, viewerVersion });
+  if (typeof shareIdentity === 'boolean') config.analytics = { ...config.analytics, shareIdentity };
+  await writeJSON(runtime(root, 'config.json'), { ...config, viewerVersion });
   const entry = runtime(root, 'server.mjs');
   const launcher = await fs.readFile(new URL('../templates/cli.mjs', import.meta.url), 'utf8');
   await writeGenerated(runtime(root, 'cli.mjs'), launcher.replace('__SPEQUI_RUNTIME__', JSON.stringify({ name: metadata.name, version: viewerVersion, spec: `${metadata.name}@${viewerVersion}`, cli: fileURLToPath(new URL('../bin/spequi.mjs', import.meta.url)), npmCLI: process.env.npm_execpath || null })));

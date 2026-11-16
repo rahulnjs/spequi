@@ -33,5 +33,7 @@ export function specContextRows(context, rows, scope, mode, icon) {
   };
   const empty = !context.links.length && !context.suggestions.length;
   const notice = context.notice || (empty ? 'No spec links recorded for this file.' : '');
-  return { render, leadingRows: first ? '' : render(rows[0]), notice: notice ? `<p class="spec-context-notice">${e(notice)}</p>` : '' };
+  const coverage = context.coverage;
+  const overview = coverage?.total ? `<div class="spec-context-overview"><span>${icon('book')}<strong>${coverage.requirements ? `${coverage.requirements} linked ${coverage.requirements === 1 ? 'spec section' : 'spec sections'}` : context.suggestions.length ? 'Suggested spec context' : 'Spec references'}</strong><span>${coverage.linked} of ${coverage.total} changed lines linked</span></span>${context.links.length || context.suggestions.length ? '<button type="button" class="text-button" data-spec-context-toggle aria-expanded="true">Collapse quotes</button>' : ''}</div>` : '';
+  return { render, leadingRows: first ? '' : render(rows[0]), overview, notice: notice ? `<p class="spec-context-notice">${e(notice)}</p>` : '' };
 }

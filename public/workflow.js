@@ -2,7 +2,44 @@
   const identities = new Map();
   const drafts = new Map(), feedback = new Map(), busy = new Set();
   const scope = () => document.getElementById('workspace')?.dataset.change || 'project';
-  const key = form => `${scope()}:${form.id}`;
+  const key = form => `${form.dataset.requestScope || scope()}:${form.id}`;
+  window.spequiQuestionForm = (job, question, prefix = 'request') => {
+    const node = (tag, text, className) => {
+      const item = document.createElement(tag);
+      if (text) item.textContent = text;
+      if (className) item.className = className;
+      return item;
+    };
+    const section = node('section', '', 'request-question');
+    section.dataset.questionKey = `${job.id}:${question.id}`;
+    const heading = node('h3', 'Your answer is needed');
+    const message = node('p', question.message, 'request-question-text');
+    const form = node('form');
+    form.id = `${prefix}-answer-${job.id}-${question.id}`;
+    form.dataset.lifecycleForm = ''; form.dataset.requestScope = job.id;
+    form.action = `/api/lifecycle/jobs/${encodeURIComponent(job.id)}/reply`; form.method = 'post';
+    const identity = node('input'); identity.type = 'hidden'; identity.name = 'questionId'; identity.value = question.id;
+    form.append(identity);
+    const options = question.options || [];
+    if (options.length) {
+      const choices = node('fieldset'), legend = node('legend', 'Choose an answer');
+      choices.append(legend);
+      for (const option of options) {
+        const label = node('label', '', 'studio-choice'), input = node('input');
+        input.type = 'radio'; input.name = 'choice'; input.value = option;
+        label.append(input, node('span', option)); choices.append(label);
+      }
+      form.append(choices);
+    }
+    const label = node('label', options.length ? 'Additional context (optional)' : 'Your answer');
+    const answer = node('textarea'); answer.id = `${form.id}-text`; answer.name = 'answer'; answer.rows = 3; answer.maxLength = 6000; answer.required = !options.length;
+    label.htmlFor = answer.id;
+    const submit = node('button', 'Reply & continue', 'button primary'); submit.type = 'submit';
+    const feedback = node('div'); feedback.dataset.lifecycleFeedback = ''; feedback.setAttribute('role', 'status'); feedback.setAttribute('aria-live', 'polite');
+    form.append(label, answer, submit, feedback);
+    section.append(heading, message, form);
+    return section;
+  };
   function remember(form) {
     drafts.set(key(form), [...form.querySelectorAll('textarea,input:not([type=hidden])')].map(input => ({ name: input.name, value: input.value, checked: input.checked, type: input.type })));
   }
@@ -62,16 +99,27 @@
         if (window.spequiSaveDraft) await window.spequiSaveDraft(form);
         form.dataset.draftSubmitting = 'true';
       }
-      if (endpoint === '/api/lifecycle/actions' || endpoint === '/api/lifecycle/command') {
+      if (endpoint === '/api/lifecycle/actions' || endpoint === '/api/lifecycle/command' || endpoint === '/api/jobs') {
         const signature = JSON.stringify(payload), previous = identities.get(id);
         const identity = previous?.signature === signature ? previous : { signature, value: window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}` };
         identities.set(id, identity); payload.requestKey = identity.value;
       }
-      const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]')?.content || '' }, body: JSON.stringify(payload) });
+      const sendRequest = () => fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]')?.content || '' }, body: JSON.stringify(payload) });
+      let response = await sendRequest();
       if (response.status === 403) throw new Error('Local session verification failed. Reload the viewer and retry.');
-      const result = await response.json();
+      let result = await response.json();
+      if (!response.ok && result.code === 'branch_confirmation_required') {
+        if (!window.confirm(result.error)) return;
+        payload.confirmBranch = true;
+        response = await sendRequest(); result = await response.json();
+      }
+      if (response.status === 403) throw new Error('Local session verification failed. Reload the viewer and retry.');
       if (!response.ok) throw new Error(result.error || 'The workflow could not run. Refresh readiness and retry.');
       const message = result.summary || (result.job ? 'Queued for your attached agent.' : result.validation ? (result.validation.valid ? 'Specification validation passed.' : 'Validation found issues. See Spec validation below.') : result.cancelled ? 'Workflow cancelled.' : payload.questionId ? 'Answer saved. The same agent session can resume.' : 'Readiness refreshed.');
+      if (payload.questionId || endpoint.endsWith('/cancel')) {
+        document.dispatchEvent(new window.CustomEvent('requests-updated'));
+        void window.spequiRefreshAgent?.();
+      }
       if (result.job) {
         if (form.hasAttribute('data-create-spec')) form.dataset.draftSubmitted = result.job.id;
         clearFeedback(form, id);
@@ -86,6 +134,11 @@
         for (const input of form.querySelectorAll('textarea')) input.value = '';
       }
       if (workspace === document.getElementById('workspace')) {
+        if (['plan-next', 'preview'].includes(result.job?.action)) {
+          const url = new URL(workspace.dataset.refreshUrl || location.href, location.href);
+          url.searchParams.set('follow', result.job.id);
+          workspace.dataset.refreshUrl = url.pathname + url.search;
+        }
         if (form.contains(document.activeElement)) document.activeElement.blur();
         document.dispatchEvent(new window.CustomEvent('workspace-updated'));
       }

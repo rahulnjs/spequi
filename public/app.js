@@ -71,28 +71,74 @@
     applyTheme(document.documentElement.dataset.theme === 'dark' ? 'enterprise' : 'dark');
     try { localStorage.setItem('spequi-theme', document.documentElement.dataset.theme); } catch {}
   });
+  function updateNotificationControls() {
+    const supported = 'Notification' in window;
+    const permission = supported ? Notification.permission : 'unavailable';
+    for (const button of document.querySelectorAll('[data-enable-notifications]')) button.hidden = permission !== 'default';
+    for (const toggle of document.querySelectorAll('[data-notification-toggle]')) {
+      toggle.dataset.notificationState = permission;
+      toggle.setAttribute('aria-label', permission === 'granted' ? 'Desktop notifications enabled' : 'Desktop notification settings');
+      toggle.title = permission === 'granted' ? 'Desktop notifications enabled' : 'Get notified when work finishes or your agent needs an answer';
+    }
+    for (const status of document.querySelectorAll('[data-notification-message]')) {
+      status.textContent = { granted: 'Desktop notifications are enabled for this browser.', denied: 'Notifications are blocked. Allow them in your browser’s site settings to enable desktop alerts.', unavailable: 'This browser does not support desktop notifications. In-app updates still work.', default: 'Desktop alerts are optional. In-app updates always stay available.' }[permission];
+    }
+  }
+  document.addEventListener('click', async event => {
+    const notificationButton = event.target.closest('[data-enable-notifications]');
+    if (notificationButton) {
+      notificationButton.disabled = true;
+      try {
+        const permission = await Notification.requestPermission();
+        toast(permission === 'granted' ? 'Desktop notifications enabled for this browser.' : 'Desktop notifications are off. Completion messages will still appear here.');
+      } catch { toast('Desktop notifications are unavailable. Completion messages will still appear here.'); }
+      finally { notificationButton.disabled = false; updateNotificationControls(); }
+    }
+    const toggle = event.target.closest('[data-spec-context-toggle]');
+    if (toggle) {
+      const quotes = [...toggle.closest('.file-diff').querySelectorAll('.spec-context-quote')];
+      const open = toggle.getAttribute('aria-expanded') !== 'true';
+      for (const quote of quotes) { quote.open = open; specDisclosures.set(quote.id, open); }
+      toggle.setAttribute('aria-expanded', String(open)); toggle.textContent = open ? 'Collapse quotes' : 'Expand quotes';
+    }
+  });
+  function syncSpecToggle() {
+    for (const toggle of document.querySelectorAll('[data-spec-context-toggle]')) {
+      const open = [...toggle.closest('.file-diff').querySelectorAll('.spec-context-quote')].some(quote => quote.open);
+      toggle.setAttribute('aria-expanded', String(open)); toggle.textContent = open ? 'Collapse quotes' : 'Expand quotes';
+    }
+  }
+  document.addEventListener('toggle', event => {
+    if (!event.target.matches?.('.spec-context-quote')) return;
+    specDisclosures.set(event.target.id, event.target.open); syncSpecToggle();
+  }, true);
+  document.addEventListener('htmx:afterSwap', updateNotificationControls);
+  window.addEventListener('focus', updateNotificationControls);
+  document.addEventListener('beforetoggle', event => { if (event.target.id === 'notification-settings' && event.newState === 'open') updateNotificationControls(); }, true);
+  updateNotificationControls();
   let pendingRefresh = false, refreshing = false, followUpRefresh = false, navigationRequests = 0, navigationGeneration = 0, backgroundXHR = null;
   const drafts = {};
   const specDisclosures = new Map();
   const sourceDrafts = new Map(), sourcePending = new Set(), sourceMessages = new Map();
   const initialDetailsToggle = document.getElementById('toggle-review-details');
   let reviewDetailsOpen = initialDetailsToggle ? initialDetailsToggle.getAttribute('aria-expanded') === 'true' : undefined, preserveReader = null;
-  function toast(message, downloadUrl = '') {
+  function toast(message, downloadUrl = '', href = '') {
     const node = document.getElementById('toast'); if (!node) return;
     node.textContent = message;
     if (/^\/api\/reviews\/[a-zA-Z0-9_-]+\/feedback\/[a-zA-Z0-9_-]+$/.test(downloadUrl)) {
       const link = document.createElement('a'); link.href = downloadUrl; link.download = 'openspec-review-feedback.md'; link.textContent = 'Download Markdown'; node.append(link);
     }
+    if (typeof href === 'string' && href.startsWith('/?')) { const link = document.createElement('a'); link.href = href; link.textContent = 'Open result'; node.append(link); }
     node.classList.add('visible'); clearTimeout(node.hideTimer);
-    const dismiss = () => { node.hideTimer = setTimeout(() => node.classList.remove('visible'), downloadUrl ? 9000 : 4500); };
+    const dismiss = () => { node.hideTimer = setTimeout(() => node.classList.remove('visible'), downloadUrl || href ? 9000 : 4500); };
     node.onpointerenter = node.onfocusin = () => clearTimeout(node.hideTimer);
     node.onpointerleave = node.onfocusout = dismiss; dismiss();
   }
   document.addEventListener('spequi-toast', event => {
-    const { message, downloadUrl = '', persist = false } = event.detail || {};
+    const { message, downloadUrl = '', href = '', persist = false } = event.detail || {};
     if (typeof message !== 'string' || !message) return;
     if (persist) try { sessionStorage.setItem('spequi-toast', JSON.stringify({ message, at: Date.now() })); } catch {}
-    toast(message, downloadUrl);
+    toast(message, downloadUrl, href);
   });
   try {
     const saved = JSON.parse(sessionStorage.getItem('spequi-toast')); sessionStorage.removeItem('spequi-toast');
@@ -117,56 +163,34 @@
     if (sourcePending.has(scope)) for (const button of document.querySelectorAll('[data-source-action] button')) button.disabled = true;
     const message = sourceMessages.get(scope), feedback = document.getElementById('source-preview-feedback');
     if (message && feedback) { feedback.textContent = message.text; feedback.className = message.error ? 'error-message' : 'success-message'; }
+    syncSpecToggle();
   }
   function readingViewport() { return document.querySelector('.diff-code-scroll') || document.querySelector('.reader'); }
   let filesLoading = null;
   function restoreFilesLoading(error = false) {
-    const saved = filesLoading;
-    filesLoading = null;
-    if (!saved || saved.workspace !== document.getElementById('workspace')) return;
-    saved.reader.replaceChildren(...saved.content);
-    saved.reader.removeAttribute('aria-busy');
-    saved.workspace.classList.toggle('diff-workspace', saved.diff);
-    saved.workspace.classList.toggle('review-details-open', saved.panelOpen);
-    for (const [tab, active] of saved.tabs) tab.classList.toggle('active', active);
-    if (saved.panel) saved.panel.hidden = saved.panelHidden;
-    if (error) {
-      const notice = document.createElement('div');
-      notice.className = 'files-load-error'; notice.setAttribute('role', 'alert');
-      const message = document.createElement('p'); message.textContent = 'Could not load file changes. Try again.';
-      const retry = saved.link.cloneNode(true); retry.className = 'button'; retry.textContent = 'Retry';
-      notice.append(message, retry); saved.reader.prepend(notice);
-      window.htmx?.process?.(notice);
-    }
+    const saved = filesLoading; filesLoading = null;
+    if (!saved) return;
+    clearTimeout(saved.timer);
+    saved.link.removeAttribute('aria-busy');
+    if (saved.label?.isConnected) saved.label.textContent = saved.text;
+    if (error) toast('Could not load file changes. Try the Files tab again.');
   }
   function showFilesLoading(link, xhr) {
     restoreFilesLoading();
-    const workspace = document.getElementById('workspace'), reader = workspace?.querySelector('.reader');
-    if (!reader) return;
-    const panel = workspace.querySelector('#review-details');
-    filesLoading = { workspace, reader, panel, panelHidden: panel?.hidden, link, xhr,
-      content: [...reader.childNodes], diff: workspace.classList.contains('diff-workspace'), panelOpen: workspace.classList.contains('review-details-open'),
-      tabs: [...workspace.querySelectorAll('.document-tab')].map(tab => [tab, tab.classList.contains('active')]) };
-    for (const [tab] of filesLoading.tabs) tab.classList.toggle('active', tab.hasAttribute('data-files-tab'));
-    const status = document.createElement('div');
-    status.className = 'files-loading'; status.setAttribute('role', 'status');
-    status.innerHTML = `<div class="files-loading-heading"><span class="files-loading-spinner" aria-hidden="true"></span><h2>Opening your file review</h2></div>
-      <p class="files-loading-description"></p>
-      <div class="files-skeleton" aria-hidden="true"><div class="files-skeleton-toolbar"><span></span><span>Current <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65"><path d="M5 12h14m-5-5 5 5-5 5"/></svg> Proposed</span></div>
-        <div class="files-skeleton-code">${['', '', 'removed', 'added', 'added', ''].map(tone => `<div class="files-skeleton-row ${tone}"><span></span><span></span></div>`).join('')}</div></div>
-      <dl class="files-loading-guide"><div><dt>Compare the code</dt><dd>Browse changed files and review additions and removals.</dd></div><div><dt>Review with context</dt><dd>Read linked spec sections, inspect file impact, and leave comments.</dd></div></dl>
-      <p class="files-loading-note">You decide when to apply the reviewed changes.</p>`;
-    const count = Number(workspace.querySelector('.document-tab[data-files-tab] .tab-count')?.textContent);
-    status.querySelector('.files-loading-description').textContent = count > 0
-      ? `Loading the saved comparison for ${count} changed ${count === 1 ? 'file' : 'files'}. See how the proposed implementation differs from your current code.`
-      : 'Compare your current code with a proposed implementation. If no diff is saved yet, you can generate one here.';
-    reader.replaceChildren(status); reader.setAttribute('aria-busy', 'true');
-    workspace.classList.add('diff-workspace');
-    workspace.classList.remove('review-details-open');
-    if (panel) panel.hidden = true;
+    const label = link.querySelector('span'), saved = { link, xhr, label, text: label?.textContent };
+    filesLoading = saved;
+    saved.timer = setTimeout(() => {
+      if (filesLoading !== saved || !link.isConnected) return;
+      link.setAttribute('aria-busy', 'true');
+      if (label) label.textContent = 'Opening…';
+    }, 400);
   }
   let applyingRequest = null;
+  let refreshTimer;
   function refresh() {
+    clearTimeout(refreshTimer); refreshTimer = setTimeout(refreshWorkspace, 150);
+  }
+  function refreshWorkspace() {
     if (sourcePending.size || navigationRequests || applyingRequest) { pendingRefresh = true; return; }
     if (refreshing) { pendingRefresh = true; followUpRefresh = true; return; }
     if (!window.htmx) { pendingRefresh = true; return; }
@@ -239,7 +263,7 @@
     }
     if (filesLoading?.xhr === event.detail?.xhr) {
       if (event.detail.failed || event.detail.xhr.status === 0 || event.detail.xhr.status >= 400) restoreFilesLoading(true);
-      else filesLoading = null;
+      else restoreFilesLoading();
     }
     if (!event.detail?.xhr?.spequiNavigation) return;
     navigationRequests = Math.max(0, navigationRequests - 1);
@@ -404,7 +428,7 @@
   function loadHTMX() {
     const script = document.createElement('script');
     script.src = '/vendor/htmx.js';
-    script.addEventListener('load', () => { if (pendingRefresh) refresh(); });
+    script.addEventListener('load', () => { window.htmx.config.defaultSettleDelay = 0; window.htmx.config.attributesToSettle = []; if (pendingRefresh) refresh(); });
     script.addEventListener('error', () => toast('HTMX could not load. Reload the viewer to retry.'));
     document.head.append(script);
   }

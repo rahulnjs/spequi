@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { createInterface } from 'node:readline/promises';
+import { readJSON, runtime } from '../src/files.mjs';
 import { reportSession } from '../src/agent-session.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { initProject, installSkill, viewerVersion } from '../src/project.mjs';
@@ -27,7 +29,16 @@ async function agentCall(operation, payload, fallback) {
 try {
   const [command, subcommand, id] = argv;
   if (command === 'init') {
-    print(await initProject(root));
+    const config = await readJSON(runtime(root, 'config.json'));
+    let shareIdentity;
+    if (typeof config?.analytics?.shareIdentity !== 'boolean' && process.stdin.isTTY && process.stdout.isTTY) {
+      const prompt = createInterface({ input: process.stdin, output: process.stdout });
+      try {
+        const answer = await prompt.question('Share this project’s folder name and Git user.name in usage events? Anonymous usage events are sent either way. Applies only to this project. [y/N] ');
+        shareIdentity = /^(y|yes)$/i.test(answer.trim());
+      } finally { prompt.close(); }
+    }
+    print(await initProject(root, { shareIdentity }));
     if (argv.includes('--start')) await startServer({ root, port: option('port') === undefined ? undefined : Number(option('port')) });
     else process.stdout.write('\nReady. Run node .spequi/server.mjs, or invoke /spequi in your agent.\n');
   } else if (command === 'start' || command === 'serve') await startServer({ root, port: option('port') === undefined ? undefined : Number(option('port')) });

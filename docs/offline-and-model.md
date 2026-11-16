@@ -1,6 +1,6 @@
 # Offline tools and model preview
 
-These tools live under **Review > Files > Plan file changes** and need no attached agent.
+These tools live under **Files > Explore affected files** and need no attached agent.
 
 ## Analyze affected files
 
@@ -14,9 +14,9 @@ Limits:
 - Exclusions, skipped files, unresolved references and stale inputs are disclosed
 - Dynamic references, aliases, external packages, and dependencies outside supported JS/TS, CSS and HTML forms can be missed
 
-## Import patch
+## Patch API (advanced)
 
-Stages a unified patch in a separate project copy.
+Patch import is not shown in the workspace. The existing `POST /api/source-preview/patch` API remains available for integrations and stages a unified patch in a separate project copy.
 
 - Add, modify or delete up to 30 eligible UTF-8 files
 - 1 MiB limit for the patch and proposed content

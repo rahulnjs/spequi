@@ -42,6 +42,12 @@ Typical retained state looks like:
       result.json         Diff metadata and application state
 ```
 
+## Native permission prompts
+
+The ask/input protocol carries Spequi workflow questions and confirmations. It does not receive native file-edit or tool-execution approval events from an arbitrary coding host. Users must answer those permission prompts in the CLI or host that owns them.
+
+An integration would need support from that host. For example, [Codex App Server](https://developers.openai.com/codex/app-server/#approvals) exposes command and file-change approval requests to its connected client, while [Claude Code PermissionRequest hooks](https://code.claude.com/docs/en/hooks#permissionrequest) provide a different integration mechanism. Neither is implemented by Spequi’s generic skill connection. Keep the existing host permission controls in effect; never represent an ordinary Spequi reply as a native tool approval.
+
 ## 2. Attachment starts in the coding agent
 
 The user invokes the installed skill using the host's convention, such as `$spequi` in Codex, `/skills spequi` in Sber/GitVerse GigaCode CLI, or `/spequi` in a CLI with that wrapper. The host makes the skill instructions available to the existing agent session.
@@ -236,7 +242,7 @@ The agent locates the skill through its host's skill discovery. In this reposito
 cat .agents/skills/openspec-apply-change/SKILL.md
 ```
 
-**Reading that file does not execute a skill.** It gives the agent instructions. The agent then carries out those instructions through its normal tools: resolving OpenSpec status, reading artifacts, editing the assigned files and running checks.
+**Reading that file does not execute a skill.** It gives the agent instructions. The agent then carries out those instructions through its normal tools: resolving OpenSpec status, reading artifacts, editing the assigned files. Preview requests explicitly exclude validation and test commands.
 
 For example, the apply workflow includes commands such as:
 
@@ -259,8 +265,10 @@ For an implementation preview:
 
 | Directory                    | What happens there                                                                                               |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `workflow.directory`         | Read the copied planning context, implement, install needed dependencies and run checks inside the isolated copy |
+| `workflow.directory`         | Read the copied planning context and make the specified file changes only; do not run checks or tests |
 | `workflow.protocolDirectory` | Run `agent log`, `ask`, `input`, `finish` and `fail` against the original project's queue                        |
+
+Preview generation does not run validation, builds, linters, type checks or tests. Test files change only when the selected specs explicitly require them. The agent records spec links while editing and includes a short summary in the same request.
 
 All implementation edits, including task checkboxes, stay inside the preview copy. The agent must re-resolve OpenSpec roots there and refuse paths that escape it. The snapshot is not an OS sandbox; the agent must honor that boundary.
 
@@ -364,7 +372,7 @@ On success:
 ```bash
 node .spequi/cli.mjs agent finish JOB_ID \
   --token CLAIM_TOKEN \
-  --message "Implemented the requested scope; checks passed."
+  --message "Implemented the requested scope; summary of changes and linked requirements."
 ```
 
 On failure:

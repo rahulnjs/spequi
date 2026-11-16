@@ -1,15 +1,17 @@
-import { escape as e, changeState, jobMatchesChange } from './specs.mjs';
+import { escape as e, markdown, changeState, jobMatchesChange } from './specs.mjs';
 import { previewResult } from './previews.mjs';
 import { renderFileDiff } from './diff-view.mjs';
 import { listComments } from './review-store.mjs';
 import { previewPlanChanged } from './lifecycle.mjs';
+import { jobQuestions } from './studio-view.mjs';
 import { trackDiffFailure } from './analytics.mjs';
 import { renderSourcePreviewTools } from './source-preview-view.mjs';
 
 export async function getPreviewContext(root, params, jobs, selected) {
   const matching = jobs.filter(job => job.action === 'preview' && (!selected || jobMatchesChange(job, selected)));
   const previews = matching.filter(job => job.status === 'completed');
-  const job = previews.find(job => job.id === params.job) || previews[0];
+  const followed = matching.find(job => job.id === params.follow && ['completed', 'failed', 'cancelled'].includes(job.status));
+  const job = previews.find(job => job.id === followed?.id) || previews.find(job => job.id === params.job) || previews[0];
   const diffRequested = params.view === 'preview' || params.view === 'studio' && params.stage === 'implement';
   let result = null;
   try { result = job ? await previewResult(root, job.id) : null; }
@@ -22,7 +24,7 @@ export async function getPreviewContext(root, params, jobs, selected) {
     if (reason) await trackDiffFailure(root, job.id, reason);
   }
   return {
-    previews, job, result, comments: job && result ? await listComments(root, job.id) : [],
+    previews, job, result, followComplete: Boolean(followed), comments: job && result ? await listComments(root, job.id) : [],
     file: result?.changes.find(change => change.file === params.file) || result?.changes[0],
     pending: matching.find(job => ['queued', 'running', 'awaiting-input'].includes(job.status)),
     failure: matching[0]?.status === 'failed' ? matching[0] : null,
@@ -45,7 +47,7 @@ export function changedFilesNavigation(context, params, selected, { link }) {
 
 function generateForm(selected, pending, icon, label = 'Generate file diff') {
   if (!selected || selected.archived) return '';
-  return `<form class="generate-diff-form" action="/api/jobs" method="post" hx-post="/api/jobs" hx-target="#preview-feedback" hx-swap="innerHTML"><input type="hidden" name="action" value="preview"><input type="hidden" name="change" value="${e(selected.id)}"><button type="submit" class="button primary" id="generate-file-diff" ${pending ? 'disabled' : ''}>${icon('spark')}${pending ? 'Generating diff…' : label}</button></form>`;
+  return `<form id="generate-diff-form" class="generate-diff-form" data-lifecycle-form action="/api/jobs" method="post"><input type="hidden" name="action" value="preview"><input type="hidden" name="change" value="${e(selected.id)}"><button type="submit" class="button primary" id="generate-file-diff" ${pending ? 'disabled' : ''}>${icon('spark')}${pending ? 'Generating diff…' : label}</button><div data-lifecycle-feedback role="status" aria-live="polite"></div></form>`;
 }
 
 function versionForm({ params, selected, context }, compact = false) {
@@ -71,17 +73,18 @@ function completedEmpty(selected, { icon, link, empty }, saved = false, failure 
 
 export async function renderPreview({ root, params, selected, agent, context, compact = false }, { icon, link, badge, empty }) {
   const { job, result, file, pending, failure } = context;
+  const pendingQuestion = pending?.status === 'awaiting-input' ? `<section class="diff-agent-question" id="diff-agent-question" tabindex="-1"><h3>Your agent needs an answer</h3>${jobQuestions(pending)}</section>` : '';
   const tools = selected && !selected.archived ? await renderSourcePreviewTools(root, selected, Boolean(result), context.workflowPending, icon) : '';
   if (!job) {
     if (!pending && changeState(selected).complete) return completedEmpty(selected, { icon, link, empty }, false, failure) + tools + '<div id="preview-feedback" role="status" aria-live="polite"></div>';
     const title = pending?.status === 'awaiting-input' ? 'Your agent needs your input.' : pending ? pending.origin ? 'Preparing proposed file changes.' : pending.status === 'running' ? 'Your agent is generating the file diff.' : 'File diff queued.' : 'No implementation diff yet.';
-    const description = pending?.status === 'awaiting-input' ? 'Open the request to answer the question and continue.' : pending ? pending.origin ? 'Proposed changes are being prepared in a separate project copy.' : pending.status === 'running' ? 'The file comparison will appear here when the preview is ready.' : 'Your agent will pick up this request when available.' : selected?.archived ? 'No file preview was saved for this archived change.' : 'Generate an implementation preview, then review its proposed file changes here.';
+    const description = pending?.status === 'awaiting-input' ? 'Answer below to continue generating your file diff.' : pending ? pending.origin ? 'Proposed changes are being prepared in a separate project copy.' : pending.status === 'running' ? 'This can take a few minutes. Your file diff will appear here when ready.' : 'Your agent will pick up this request when available.' : selected?.archived ? 'No file preview was saved for this archived change.' : 'Generate an implementation preview, then review its proposed file changes here.';
     const progress = pending ? `<div class="diff-generation-status" role="status"><span class="badge ${pending.status === 'running' ? 'blue' : ''}">${e({ queued: 'Queued', running: 'Working', 'awaiting-input': 'Answer needed' }[pending.status] || pending.status)}</span>${pending.logs.slice(-1).map(log => `<p>${e(log.message)}</p>`).join('')}</div>` : '';
     const attach = !pending && !agent.connected && selected && !selected.archived ? '<p class="diff-agent-note">No agent connected. Preview requests will wait in the queue.</p>' : '';
     const error = failure ? `<p class="error-message">Previous attempt failed: ${e(failure.result || 'Retry with your agent attached.')}</p>` : '';
-    const request = pending && selected ? link(pending.status === 'awaiting-input' ? 'Reply to agent' : 'View request', { change: selected.id, view: 'workflow', pane: 'conversation' }, 'button primary') : '';
+    const request = pending?.status === 'awaiting-input' ? '<a href="#diff-agent-question" class="button primary">Answer agent</a>' : pending ? '<button type="button" class="button" data-requests-toggle>Request details</button>' : '';
     const actions = `<div class="diff-empty-actions">${pending ? '' : generateForm(selected, null, icon)}${request}</div>`;
-    return `<div class="diff-empty-state">${empty(title, description, 'git', `${actions}${attach}${progress}${error}${tools}<div id="preview-feedback" role="status" aria-live="polite"></div>`)}</div>`;
+    return `<div class="diff-empty-state">${empty(title, description, 'git', `${actions}${attach}${progress}${pendingQuestion}${pending ? '<p class="diff-cli-note">Your CLI may be waiting for a permission or another action. Check your coding session if progress pauses.</p>' : '<p class="diff-scope-note">Makes the spec’s file changes in an isolated copy. Validation and testing are separate steps.</p>'}${error}<div id="preview-feedback" role="status" aria-live="polite"></div>`)}</div>${pending ? '' : tools}`;
   }
   if (!result) return `<div class="diff-empty-state">${empty('Preview files unavailable', 'Generate a fresh file diff to continue reviewing.', 'git', `<div class="diff-empty-actions">${generateForm(selected, pending, icon)}</div>`)}</div>`;
   const fileDiff = file ? await renderFileDiff({ root, job, file, result, selected, params, compact, comments: context.comments }, { icon, link, badge }) : '';
@@ -92,7 +95,9 @@ export async function renderPreview({ root, params, selected, agent, context, co
   const stale = selected ? await previewPlanChanged(root, selected, job, result) : false;
   const blocked = selected?.archived || stale || context.workflowPending;
   const reason = selected?.archived ? 'This change is archived.' : stale ? 'The spec changed. Generate a fresh file diff before applying.' : context.workflowPending ? 'Wait for the current request to finish before applying.' : '';
+  const lastFailure = failure && failure.createdAt > job.createdAt ? `<p class="error-message">The latest diff request failed: ${e(failure.result || 'Check your coding session and retry.')}</p>` : '';
   const provenance = `<div class="source-preview-status guided-file-actions"><span><strong>${job.origin === 'model' ? `Model proposal · ${e(job.model)}` : job.origin ? 'Imported patch' : result.applied ? 'Code changes applied' : 'Review your code changes'}</strong><small>${e(job.validation?.message || `${result.changes.length} changed files · ${result.applied ? 'Saved in your project' : 'Your project has not changed'}${result.taskUpdates?.length ? ' · Includes task completion updates' : ''}`)}</small></span><div class="preview-followup">${result.applied ? link('Continue', { change: selected?.id, view: 'workflow' }, 'button') : ''}${job.origin ? `<a class="button" href="/api/previews/${job.id}/patch" download="${e(job.change)}.patch">${icon('download')}Export patch</a>` : ''}${stale ? generateForm(selected, pending, icon, 'Regenerate diff') : ''}${applyForm(job, result, icon, blocked)}</div>${reason ? `<p class="preview-blocker">${e(reason)}</p>` : ''}</div>`;
-  if (compact) return `${provenance}<div class="compact-review-feedback"><div id="preview-feedback" role="status" aria-live="polite"></div><div id="apply-feedback" role="status"></div>${pending ? '<p class="muted diff-pending-note">A new diff is being generated. This completed preview stays available while you wait.</p>' : ''}${result.unsupported.length ? `<p class="error-message">Unsupported binary or oversized changes: ${e(result.unsupported.join(', '))}. Apply is disabled.</p>` : ''}</div><section class="diff-panel">${fileDiff || noChanges}</section>${tools}`;
-  return `<div class="review-intro file-review-intro"><div class="file-review-title"><h2>File review ${badge(result.applied ? 'Applied' : 'Ready for review', 'success')}</h2>${versions}</div><div class="preview-actions"><span><strong>${result.changes.length}</strong> changed files <span class="diff-add">+${additions}</span> <span class="diff-remove">−${deletions}</span></span><a class="button" href="/api/previews/${job.id}/patch" download="${e(job.change || 'preview')}.patch">${icon('download')} Export patch</a>${generateForm(selected, pending, icon, 'Regenerate diff')}${applyForm(job, result, icon, selected?.archived)}</div><div id="preview-feedback" role="status" aria-live="polite"></div><div id="apply-feedback" role="status"></div>${pending ? '<p class="muted diff-pending-note">A new diff is being generated. This completed preview stays available while you wait.</p>' : ''}${result.unsupported.length ? `<p class="error-message">Unsupported binary or oversized changes: ${e(result.unsupported.join(', '))}. Apply is disabled.</p>` : ''}</div><section class="diff-panel">${fileDiff || noChanges}</section>${tools}`;
+  const summary = !job.origin && job.result && job.result !== 'Completed' ? `<details class="diff-summary" id="diff-summary-${e(job.id)}"><summary>${icon('spark')}<strong>Change summary</strong><span>From your agent</span>${icon('chevron')}</summary><div class="prose">${markdown(job.result)}</div></details>` : '';
+  if (compact) return `${provenance}${summary}<div class="compact-review-feedback">${lastFailure}${pendingQuestion}<div id="preview-feedback" role="status" aria-live="polite"></div><div id="apply-feedback" role="status"></div>${pending ? '<p class="muted diff-pending-note">A new diff is being generated. This completed preview stays available while you wait.</p>' : ''}${result.unsupported.length ? `<p class="error-message">Unsupported binary or oversized changes: ${e(result.unsupported.join(', '))}. Apply is disabled.</p>` : ''}</div><section class="diff-panel">${fileDiff || noChanges}</section>${tools}`;
+  return `<div class="review-intro file-review-intro"><div class="file-review-title"><h2>File review ${badge(result.applied ? 'Applied' : 'Ready for review', 'success')}</h2>${versions}</div><div class="preview-actions"><span><strong>${result.changes.length}</strong> changed files <span class="diff-add">+${additions}</span> <span class="diff-remove">−${deletions}</span></span><a class="button" href="/api/previews/${job.id}/patch" download="${e(job.change || 'preview')}.patch">${icon('download')} Export patch</a>${generateForm(selected, pending, icon, 'Regenerate diff')}${applyForm(job, result, icon, selected?.archived)}</div><div id="preview-feedback" role="status" aria-live="polite"></div><div id="apply-feedback" role="status"></div>${pending ? '<p class="muted diff-pending-note">A new diff is being generated. This completed preview stays available while you wait.</p>' : ''}${result.unsupported.length ? `<p class="error-message">Unsupported binary or oversized changes: ${e(result.unsupported.join(', '))}. Apply is disabled.</p>` : ''}</div>${lastFailure}${pendingQuestion}${summary}<section class="diff-panel">${fileDiff || noChanges}</section>${tools}`;
 }

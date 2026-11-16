@@ -25,6 +25,7 @@ import { requestPage, deleteRequest, retryRequest, dismissRequest, inboxState } 
 import { viewerVersion } from './project.mjs';
 import { conversation } from './studio-view.mjs';
 import { initializeAnalytics, trackEvent } from './analytics.mjs';
+import { validateBranch, confirmChangeBranch, saveChangeBranch } from './branches.mjs';
 
 const require = createRequire(import.meta.url);
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
@@ -135,7 +136,7 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
           const relevant = jobs.filter(job => !job.hiddenAt && (selected && jobMatchesChange(job, selected) || job.id === url.searchParams.get('creation')));
           const draftStates = await Promise.all(drafts.map(async draft => ({ id: draft.id, change: draft.change, creationId: draft.creationId, status: jobs.find(job => job.id === draft.creationId)?.status, hasPlan: Boolean(draft.creationId && /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(draft.change) && await exists(path.join(root, 'openspec', 'changes', draft.change))) })));
           const inbox = requestPage(jobs, {}, { agent, dismissed: await inboxState(root) });
-          return send(response, 200, JSON.stringify({ agent, attention: inbox.attention, inboxCount: inbox.total, revision: JSON.stringify(relevant.map(job => [job.id, job.status])), thread: conversation(relevant, agent), drafts: draftStates, active: jobs.filter(job => pendingStatuses.includes(job.status)).map(job => ({ id: job.id, change: job.change, status: job.status })) }), 'application/json');
+          return send(response, 200, JSON.stringify({ notifications: jobs.filter(job => !job.hiddenAt).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 100).map(({ id, action, change, status, updatedAt }) => ({ id, action, change, status, updatedAt })), agent, attention: inbox.attention, inboxCount: inbox.total, revision: JSON.stringify(relevant.map(job => [job.id, job.status])), thread: conversation(relevant, agent), drafts: draftStates, active: jobs.filter(job => pendingStatuses.includes(job.status)).map(job => ({ id: job.id, change: job.change, status: job.status })) }), 'application/json');
         }
         const feedbackMatch = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/feedback\/([a-zA-Z0-9_-]+)$/);
         if (feedbackMatch) {
@@ -167,6 +168,13 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
         return send(response, 204, '');
       }
       if (url.pathname === '/api/drafts') return send(response, 200, JSON.stringify({ draft: await saveDraft(root, payload) }), 'application/json');
+      if (url.pathname === '/api/change-branch') {
+        if ((await listJobs(root)).some(job => job.change === payload.change && pendingStatuses.includes(job.status))) throw new Error('Wait for this change’s active request to finish before changing its branch.');
+        const branch = await validateBranch(root, payload.branch);
+        const confirmed = await confirmChangeBranch(root, payload.change, branch, payload.confirmBranch);
+        await saveChangeBranch(root, payload.change, branch, confirmed);
+        return send(response, 200, JSON.stringify({ summary: branch ? `Branch saved. The agent will switch to ${branch} before starting its next request.` : 'Branch preference cleared. Requests will use the current branch.' }), 'application/json');
+      }
       const draftResume = url.pathname.match(/^\/api\/drafts\/([a-zA-Z0-9_-]+)\/resume$/);
       if (draftResume) return send(response, 200, JSON.stringify(await resumeDraft(root, draftResume[1])), 'application/json');
       const draftDelete = url.pathname.match(/^\/api\/drafts\/([a-zA-Z0-9_-]+)\/delete$/);
@@ -226,6 +234,7 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
       }
       if (url.pathname === '/api/jobs') {
         const job = await enqueue(root, payload);
+        if (request.headers.accept?.includes('application/json')) return send(response, 201, JSON.stringify({ job: { id: job.id, action: job.action, change: job.change, status: job.status } }), 'application/json');
         return send(response, 201, '', undefined, { 'HX-Trigger': JSON.stringify({ 'spequi-toast': { message: `${job.action === 'preview' ? 'Preview' : 'Workflow'} queued. Your agent will pick it up.` }, 'workspace-updated': true }) });
       }
       const cancelMatch = url.pathname.match(/^\/api\/jobs\/([a-zA-Z0-9_-]+)\/cancel$/);

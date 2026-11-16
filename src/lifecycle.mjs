@@ -73,7 +73,7 @@ export async function lifecycleState(root, change = '', { jobs, selected, getRea
 }
 
 export async function requestLifecycle(root, payload, { getReadiness = localReadiness, runCLI = openspecJSON } = {}) {
-  const { action, change = '', message = '', planMode = 'next', requestKey, draftId } = payload;
+  const { action, change = '', message = '', branch, confirmBranch, planMode = 'next', requestKey, draftId } = payload;
   if (typeof change !== 'string' || change.length > 160) throw new Error('Invalid change name');
   const allowed = ['start-plan', 'create-change', 'explore', 'plan-next', 'propose', 'revise-plan', 'finish-planning', 'preview', 'verify', 'validate', 'refresh', 'sync-specs', 'archive', 'archive-override'];
   if (!allowed.includes(action)) throw new Error('Unknown lifecycle action');
@@ -91,7 +91,7 @@ export async function requestLifecycle(root, payload, { getReadiness = localRead
       if (!context.root?.path || await fs.realpath(context.root.path) !== await fs.realpath(root)) throw new Error('OpenSpec must resolve to this project before starting a change.');
       const pending = (await listJobs(root)).find(job => job.change === change && pendingStatuses.includes(job.status));
       if (pending) throw new Error('A workflow for this change is already pending.');
-      const create = () => enqueue(root, { action, change, message, planMode, requestKey });
+      const create = () => enqueue(root, { action, change, message, branch, confirmBranch, planMode, requestKey });
       const job = draftId && action === 'start-plan' ? await submitDraft(root, draftId, create) : await create();
       return { job, url: action === 'start-plan' ? `/?view=studio&new=1&creation=${job.id}` : '/?view=studio&new=1' };
     }
@@ -114,7 +114,7 @@ export async function requestLifecycle(root, payload, { getReadiness = localRead
       return { validation };
     }
     const goal = message || state.jobs.find(job => ['create-change', 'start-plan'].includes(job.action))?.message || 'Continue the selected workflow for this exact change.';
-    const job = await enqueue(root, { action: action === 'archive-override' ? 'archive' : action, change, message: goal, archiveOverride: action === 'archive-override', requestKey });
+    const job = await enqueue(root, { action: action === 'archive-override' ? 'archive' : action, change, message: goal, branch, confirmBranch, archiveOverride: action === 'archive-override', requestKey });
     return { job, url: `/?${new URLSearchParams({ change, view: 'studio' })}` };
   });
 }

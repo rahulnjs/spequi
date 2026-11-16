@@ -9,13 +9,13 @@ export async function listDrafts(root) {
   const drafts = await Promise.all(names.filter(name => /^[a-zA-Z0-9_-]+\.json$/.test(name)).map(name => readJSON(runtime(root, 'drafts', name))));
   return drafts.filter(Boolean).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
-export async function saveDraft(root, { id = randomUUID(), change = '', message = '', planMode = 'next' }) {
+export async function saveDraft(root, { id = randomUUID(), change = '', message = '', branch = '', planMode = 'next' }) {
   safeID(id);
-  if (typeof change !== 'string' || change.length > 80 || typeof message !== 'string' || message.length > 12000 || !['next', 'full'].includes(planMode)) throw new Error('Invalid planning draft');
+  if (typeof change !== 'string' || change.length > 80 || typeof message !== 'string' || message.length > 12000 || typeof branch !== 'string' || branch.length > 200 || !['next', 'full'].includes(planMode)) throw new Error('Invalid planning draft');
   return withLock(runtime(root, `draft-${id}.lock`), async () => {
     const previous = await readJSON(file(root, id));
     if (previous?.creationId) throw new Error('This idea was submitted. Continue from its planning workspace.');
-    const draft = { id, createdAt: previous?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString(), change, message, planMode };
+    const draft = { id, createdAt: previous?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString(), change, message, branch, planMode };
     await writeJSON(file(root, id), draft);
     return draft;
   });
@@ -29,7 +29,7 @@ export async function submitDraft(root, id, create) {
       if (job) return job;
     }
     const job = await create();
-    await writeJSON(file(root, id), { ...draft, creationId: job.id, change: job.change, message: job.message, planMode: job.planMode, updatedAt: new Date().toISOString() });
+    await writeJSON(file(root, id), { ...draft, creationId: job.id, change: job.change, message: job.message, branch: job.branch || '', planMode: job.planMode, updatedAt: new Date().toISOString() });
     return job;
   });
 }

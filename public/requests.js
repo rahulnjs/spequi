@@ -1,10 +1,36 @@
 (() => {
   const panel = () => document.getElementById('requests-panel');
   const workspace = () => document.getElementById('workspace');
-  const labels = { stalled: 'No recent update', queued: 'Queued', running: 'Working', 'awaiting-input': 'Answer needed', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled' };
+  const labels = { stalled: 'In progress · check CLI', queued: 'Queued', running: 'Working', 'awaiting-input': 'Answer needed', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled' };
   const actions = { 'start-plan': 'New spec', 'plan-next': 'Next artifact', 'revise-plan': 'Spec revision', preview: 'Implementation preview', verify: 'Verification', explore: 'Question', 'update-specs': 'Review feedback', impact: 'File impact', archive: 'Archive' };
   let page = 1, pages = 1, opener, activityPending, activityAgain = false, agent = {}, listGeneration = 0;
   const saves = new Map(), saved = new Map(), saveFailures = new Map(), deletedDrafts = new Set();
+  const notificationKey = `spequi-request-notifications:${location.host}`;
+  let notificationStates = new Map(), notificationBaseline = false;
+  const openedAt = Date.now();
+  try { notificationStates = new Map(JSON.parse(sessionStorage.getItem(notificationKey) || '[]')); notificationBaseline = notificationStates.size > 0; } catch {}
+  function notifyTransitions(jobs = []) {
+    for (const job of jobs) {
+      const previous = notificationStates.get(job.id);
+      const changed = previous !== job.status && (previous || notificationBaseline && Date.parse(job.updatedAt) >= openedAt);
+      if (changed && ['completed', 'failed', 'awaiting-input'].includes(job.status)) {
+        const title = job.status === 'completed' ? job.action === 'preview' ? 'Your file diff is ready' : 'Your request is complete' : job.status === 'awaiting-input' ? 'Your agent needs an answer' : 'Your request needs attention';
+        const message = `${title}${job.change ? ` · ${job.change}` : ''}.`;
+        const href = openLink(job).getAttribute('href');
+        document.dispatchEvent(new window.CustomEvent('spequi-toast', { detail: { message, href } }));
+        if ('Notification' in window && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
+          try {
+            const notice = new Notification('Spequi', { body: message, tag: `spequi-${job.id}-${job.status}` });
+            notice.onclick = () => { window.focus(); location.assign(href); notice.close(); };
+          } catch {}
+        }
+      }
+      notificationStates.set(job.id, job.status);
+    }
+    notificationBaseline = true;
+    const retained = jobs.map(job => [job.id, job.status]);
+    try { sessionStorage.setItem(notificationKey, JSON.stringify(retained)); } catch {}
+  }
   async function api(url, payload) {
     const response = await fetch(url, payload === undefined ? { headers: { Accept: 'application/json' } } : { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '' }, body: JSON.stringify(payload), ...(url === '/api/drafts' ? { keepalive: true } : {}) });
     const result = await response.json();
@@ -46,13 +72,13 @@
   function openLink(job) {
     const stage = ['preview', 'impact'].includes(job.action) ? 'implement' : ['verify', 'sync-specs', 'archive'].includes(job.action) ? 'finish' : 'shape';
     const query = job.action === 'start-plan' ? { view: 'studio', new: '1', creation: job.id } : {
-      change: job.change || '', view: stage === 'shape' ? 'studio' : job.status === 'completed' && ['preview', 'impact'].includes(job.action) ? 'preview' : 'workflow', ...(stage === 'shape' ? { stage } : {}),
+      change: job.change || '', view: stage === 'shape' ? 'studio' : ['preview', 'impact'].includes(job.action) ? 'preview' : 'workflow', ...(stage === 'shape' ? { stage } : {}),
       ...(job.status === 'awaiting-input' ? { pane: 'conversation' } : {}),
       ...(job.action === 'preview' ? { job: job.id } : {}),
       ...(job.action === 'impact' ? { job: job.reviewPreview, file: job.reviewFile } : {})
     };
-    const link = node('a', job.status === 'awaiting-input' ? 'Reply' : 'Open', 'button request-open');
-    link.setAttribute('aria-label', job.status === 'awaiting-input' ? 'Reply to request' : 'Open request');
+    const link = node('a', job.status === 'awaiting-input' ? 'Open change' : 'Open', 'button request-open');
+    link.setAttribute('aria-label', job.status === 'awaiting-input' ? 'Open this change’s conversation' : 'Open request');
     link.append(requestIcon('open')); link.href = '/?' + new URLSearchParams(query); return link;
   }
   function button(text, action, id) {
@@ -83,7 +109,7 @@
     state.append(action);
     return state;
   }
-  function requestRow(job, history, expanded) {
+  function requestRow(job, history, expanded, replies = new Map()) {
     const row = node('section', undefined, 'request-row'), heading = node('div', undefined, 'request-heading');
     row.dataset.requestId = job.id; row.dataset.requestKey = job.groupKey || job.id;
     const status = node('span', labels[job.stalled ? 'stalled' : job.status] || job.status, 'request-state'); status.dataset.state = job.stalled ? 'stalled' : job.status;
@@ -92,13 +118,15 @@
     if (job.groupCount > 1) heading.append(node('small', `${job.groupCount} actions`, 'request-group-count'));
     heading.append(status);
     row.append(heading);
+    const question = job.status === 'awaiting-input' ? job.questions?.at(-1) : null;
+    if (question && !question.answeredAt) row.append(replies.get(`${job.id}:${question.id}`) || window.spequiQuestionForm(job, question, 'inbox'));
     const detail = node('details'); detail.open = expanded.has(job.groupKey || job.id);
     const summary = node('summary'); summary.append(node('span', job.message || 'View request details', 'request-summary-text'), requestIcon('chevron')); detail.append(summary);
     const body = node('div', undefined, 'request-detail-body'), log = node('ol');
     for (const item of job.logs?.slice(-30) || []) log.append(node('li', item.message));
     if (log.children.length) body.append(node('h3', 'Activity'), log);
     if (job.result) body.append(node('h3', 'Result'), node('p', job.result, 'request-result'));
-    if (job.stalled) body.prepend(node('p', 'The agent may still be working. You can check back later.', 'request-status-note'));
+    if (job.stalled) body.prepend(node('p', 'This can take a few minutes. The result will appear here when ready. Your CLI may be waiting for a permission or another action.', 'request-status-note'));
     detail.append(body); row.append(detail);
     const footer = node('div', undefined, 'request-footer'), meta = node('div', undefined, 'request-meta');
     const kind = node('span', actions[job.action] || job.action, 'request-kind'); kind.title = kind.textContent;
@@ -129,6 +157,7 @@
       const expanded = new Set([...list.querySelectorAll('.request-row details[open]')].map(detail => detail.closest('.request-row').dataset.requestKey));
       const focused = list.contains(document.activeElement) ? document.activeElement : null;
       const focus = focused ? { id: focused.closest('.request-row')?.dataset.requestKey, recent: focused.hasAttribute('data-request-recent-toggle'), action: focused.dataset.requestAction, tag: focused.tagName.toLowerCase(), empty: focused.hasAttribute('data-request-empty-action') } : null;
+      const replies = new Map([...list.querySelectorAll('[data-question-key]')].map(item => [item.dataset.questionKey, item]));
       list.replaceChildren();
       const inbox = status === 'inbox';
       if (!result.items.length) list.append(emptyRequests(status, Boolean(result.historyTotal)));
@@ -138,21 +167,21 @@
           section = Boolean(job.needsAttention);
           list.append(node('h3', section ? 'Needs attention' : 'In progress', 'requests-section-title'));
         }
-        list.append(requestRow(job, !inbox, expanded));
+        list.append(requestRow(job, !inbox, expanded, replies));
       }
       if (inbox && result.recent?.length) {
         const recent = node('details', undefined, 'requests-recent'); recent.id = 'requests-recent'; recent.open = recentOpen;
         const summary = node('summary'); summary.setAttribute('data-request-recent-toggle', '');
         summary.append(node('span', 'Recent'), node('small', String(result.recent.length)), requestIcon('chevron'));
         recent.append(summary);
-        for (const job of result.recent) recent.append(requestRow(job, false, expanded));
+        for (const job of result.recent) recent.append(requestRow(job, false, expanded, replies));
         list.append(recent);
       }
       list.scrollTop = scroll;
       if (focus) {
         const row = [...list.querySelectorAll('.request-row')].find(row => row.dataset.requestKey === focus.id);
         const control = focus.recent ? list.querySelector('[data-request-recent-toggle]') : focus.empty ? list.querySelector('[data-request-empty-action]') : focus.action ? [...(row?.querySelectorAll('[data-request-action]') || [])].find(control => control.dataset.requestAction === focus.action) : ['summary', 'a'].includes(focus.tag) ? row?.querySelector(focus.tag) : null;
-        (control || row?.querySelector('summary') || panel().querySelector('[data-request-filter]')).focus({ preventScroll: true });
+        (focused?.isConnected ? focused : control || row?.querySelector('summary') || panel().querySelector('[data-request-filter]')).focus({ preventScroll: true });
       }
       panel().querySelector('[data-request-pagination]').textContent = `${result.total} ${inbox ? 'in inbox' : result.total === 1 ? 'request' : 'requests'}${pages > 1 ? ` · ${page} of ${pages}` : ''}`;
       panel().querySelector('footer').hidden = result.total === 0;
@@ -191,6 +220,7 @@
     const query = new URL(current.dataset.refreshUrl || location.href, location.href);
     activityPending = (async () => {
       const result = await api('/api/activity?' + new URLSearchParams({ change: current.dataset.change || '', creation: query.searchParams.get('creation') || '' }));
+      notifyTransitions(result.notifications);
       agent = result.agent; document.dispatchEvent(new window.CustomEvent('agent-status', { detail: agent }));
       const attention = result.attention || 0, inboxCount = result.inboxCount ?? attention;
       const markerLabel = inboxCount ? `${inboxCount} ${inboxCount === 1 ? 'item' : 'items'} in your inbox${attention ? `; ${attention} ${attention === 1 ? 'needs' : 'need'} your attention` : ''}` : 'No pending requests';
@@ -224,7 +254,7 @@
     const id = form.querySelector('[name="draftId"]')?.value;
     const stopped = () => deletedDrafts.has(id) || form.dataset.draftSubmitting === 'true' || Boolean(form.dataset.draftSubmitted);
     if (!id || stopped()) return Promise.resolve();
-    const payload = { id, change: form.querySelector('[name="change"]').value, message: form.querySelector('[name="message"]').value, planMode: form.querySelector('[name="planMode"]:checked')?.value || 'next' };
+    const payload = { id, change: form.querySelector('[name="change"]').value, message: form.querySelector('[name="message"]').value, branch: form.querySelector('[name="branch"]')?.value || '', planMode: form.querySelector('[name="planMode"]:checked')?.value || 'next' };
     if (!payload.change.trim() && !payload.message.trim()) return Promise.resolve();
     const signature = JSON.stringify(payload), info = form.querySelector('[data-draft-save-state]');
     const save = (saves.get(id) || Promise.resolve()).catch(() => {}).then(async () => {

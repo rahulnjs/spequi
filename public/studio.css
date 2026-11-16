@@ -7,12 +7,8 @@
 .workspace-mode:hover{background:var(--rail)}
 .workspace-mode.selected{background:var(--surface);color:var(--accent-text);font-weight:600}
 .workspace.studio-workspace{grid-template-columns:var(--rail-width) minmax(0,1fr)}
-.studio-workspace .main{min-width:0;min-height:0;container:studio-main / inline-size}
+.studio-workspace .main{min-width:0;min-height:0;container:studio-main review-main / inline-size}
 .studio-workspace .reader{overflow:hidden;display:flex;flex-direction:column;min-height:0;padding:0}
-.studio-workspace .compact-change-header{display:flex;align-items:center;gap:16px;padding:6px 20px;min-height:54px;flex-shrink:0}
-.studio-workspace .compact-change-header>.breadcrumbs{flex:1;min-width:0;min-height:40px;padding:0;border:0;white-space:nowrap;overflow:hidden}
-.studio-workspace .compact-change-header>.breadcrumbs>span{flex-shrink:0}
-.studio-workspace .compact-change-header>.breadcrumbs>svg{flex-shrink:0}
 .studio-flow-controls{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .studio-flow-controls .studio-commands{margin-left:0}
 .studio-flow-controls>[data-draft-delete]{font-size:11px;white-space:nowrap}
@@ -265,3 +261,79 @@
 .mcp-panel-footer time{font-variant-numeric:tabular-nums;text-align:right}
 @media(max-width:520px){.mcp-panel{max-width:calc(100vw - 16px)}.topbar .session-mcp-button{min-height:36px}.mcp-panel .icon-button{min-height:36px;width:36px}}
 @media(pointer:coarse){.topbar .session-mcp-button,.mcp-panel .icon-button,.mcp-panel-footer .text-button{min-height:44px}.mcp-panel .icon-button{width:44px}}
+
+/* Persistent artifact navigation and a linear, explained workflow. */
+.document-tab[aria-disabled=true]{color:var(--muted);cursor:default}
+.workflow-guide{width:100%;max-width:76ch;font-size:13px}
+.workflow-guide>h1{font-size:24px}
+.workflow-steps{list-style:none;margin:28px 0 0;padding:0}
+.workflow-step{display:grid;grid-template-columns:30px minmax(0,1fr);gap:16px;padding:0 0 28px;position:relative}
+.workflow-step:not(:last-child)::before{content:'';position:absolute;left:14px;top:32px;bottom:4px;width:1px;background:var(--line)}
+.workflow-step-number{display:grid;place-items:center;width:30px;height:30px;border:1px solid var(--line);border-radius:50%;font-size:12px;color:var(--muted);background:var(--surface);font-variant-numeric:tabular-nums}
+.workflow-step[data-step-state=complete]>.workflow-step-number{border-color:var(--green);color:var(--green)}
+.workflow-step>section{min-width:0;padding-top:2px}
+.workflow-step-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.workflow-step-heading h2{font-size:16px;margin:0;line-height:1.6}
+.workflow-step section>p{margin:8px 0 12px;color:var(--muted);max-width:65ch;line-height:1.7}
+.workflow-step .studio-action{margin-top:12px}
+.workflow-step .studio-blocker{font-size:11px;margin-top:6px}
+.workflow-branch{padding:12px 0;border-block:1px solid var(--line);margin-top:24px;font-size:12px}
+.workflow-branch>summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none}
+.workflow-branch>summary::-webkit-details-marker{display:none}
+.workflow-branch>summary>svg:last-child{margin-left:auto;width:14px}
+.workflow-branch[open]>summary>svg:last-child{transform:rotate(90deg)}
+.workflow-branch form{margin-top:16px}
+.workflow-branch label{display:block;font-weight:550;margin-bottom:6px}
+.workflow-branch form>div:not([data-lifecycle-feedback]){display:flex;gap:8px;flex-wrap:wrap}
+.workflow-branch input:not([type=hidden]){flex:1;min-width:140px;border:1px solid var(--line);border-radius:var(--radius);padding:8px 10px;background:var(--surface);color:var(--text)}
+.workflow-branch p{font-size:11px;line-height:1.7;color:var(--muted)}
+.workflow-report>summary{cursor:pointer;color:var(--accent-text)}
+.workflow-report>.prose{font-size:13px;margin:12px 0;max-height:320px;overflow:auto}
+.studio-cli-hint:empty{display:none}
+@media(max-width:760px){.workflow-step{gap:12px}.workflow-branch input:not([type=hidden]){font-size:16px}.workflow-branch .button{min-height:44px}}
+
+/* Questions can be answered wherever their waiting state is shown. */
+.request-question{margin-top:14px;padding-top:14px;border-top:1px solid var(--line);min-width:0;font-size:12px}
+.request-question>h3{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--text)}
+.request-question .request-question-text{margin:0 0 12px;max-height:180px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text);font-size:12px;line-height:1.7}
+.request-question fieldset{border:0;margin:0 0 12px;padding:0;min-width:0}
+.request-question legend{font-size:11px;color:var(--muted);margin-bottom:4px}
+.request-question .studio-choice{font-size:12px;line-height:1.6;padding:7px 0}
+.request-question form>label{display:block;font-size:12px;margin-bottom:6px}
+.request-question textarea{display:block;width:100%;padding:9px 10px;min-height:76px;margin-bottom:10px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--text);font:inherit;resize:vertical}
+.request-question [data-lifecycle-feedback]:empty{display:none}
+#session-cancel-request{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.agent-panel #session-cancel-request>p{font-size:11px;margin:0 0 8px}
+.agent-panel #session-cancel-request>.button{font-size:11px}
+.topbar .notification-toggle{display:inline-flex;align-items:center;justify-content:center;width:32px;min-height:32px;padding:7px;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.topbar .notification-toggle:hover,.topbar .notification-toggle[aria-expanded=true]{background:var(--rail);color:var(--text)}
+.topbar .notification-toggle[data-notification-state=granted]{color:var(--accent-text)}
+.notification-settings{position:fixed;inset:auto;margin:0;width:min(320px,calc(100vw - 24px));max-height:calc(100dvh - 80px);overflow:auto;padding:18px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);font-size:12px;line-height:1.7}
+.notification-settings h2{margin:0 0 10px;font-size:15px;font-weight:600}
+.notification-settings p{margin:0 0 12px;color:var(--muted)}
+.notification-settings .notification-note{font-size:11px}
+.notification-settings [data-notification-message]{padding-top:12px;border-top:1px solid var(--line)}
+.notification-settings .button{width:100%;justify-content:center}
+@media(max-width:760px){.request-question textarea{font-size:16px}.request-question .button,.topbar .notification-toggle{min-height:44px}.topbar .notification-toggle{width:36px}}
+
+/* Keep pending planning requests in one quiet, readable column. */
+.studio-creation .studio-creation-caption{padding:32px max(24px,calc((100% - 760px)/2)) 0;border:0}
+.creation-title{display:flex;align-items:center;gap:10px}
+.creation-title>svg{width:22px;height:22px;color:var(--accent-text)}
+.studio-creation .studio-creation-caption h1{font-size:24px;font-weight:600;line-height:1.35;letter-spacing:-.02em;margin:0}
+.studio-creation .studio-creation-caption>p{max-width:65ch;margin:12px 0 0;font-size:13px;line-height:1.7}
+.creation-queue-action{margin-top:18px;font-size:12px}
+.studio-creation .studio-creation-thread{padding:28px max(24px,calc((100% - 760px)/2)) 32px}
+.studio-creation-thread .studio-user{background:transparent;border-radius:0;padding:0 0 22px;margin:0 0 22px;border-bottom:1px solid var(--line)}
+.studio-creation-thread .studio-user>strong{font-size:12px;font-weight:500;color:var(--muted)}
+.studio-creation-thread .studio-user>p{max-width:68ch;margin:8px 0 0;font-size:14px;line-height:1.75;white-space:pre-wrap}
+.studio-creation-thread .studio-message-heading{display:none}
+.studio-creation-thread .studio-progress{padding:0 0 16px}
+.studio-creation-thread .studio-progress strong{font-size:13px;font-weight:550}
+.studio-creation-thread .studio-progress p{font-size:12px;line-height:1.7}
+.studio-creation[data-request-status=queued] .studio-progress{display:none}
+.studio-creation-thread .studio-message details{margin-top:12px}
+.studio-creation-thread [id^=studio-cancel-]{margin-top:12px}
+.studio-creation-thread [id^=studio-cancel-]>.button{min-height:36px;padding:6px 0;border-color:transparent;background:transparent;color:var(--muted);font-size:12px}
+.studio-creation-thread [id^=studio-cancel-]>.button:hover{color:var(--text);text-decoration:underline;text-underline-offset:3px}
+@media(max-width:760px){.studio-creation .studio-creation-caption{padding:24px 20px 0}.studio-creation .studio-creation-caption h1{font-size:22px}.studio-creation .studio-creation-thread{padding:24px 20px}.studio-creation-thread [id^=studio-cancel-]>.button{min-height:44px}}
