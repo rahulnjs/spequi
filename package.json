@@ -1,6 +1,6 @@
 {
   "name": "spequi",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Local web UI for OpenSpec: plan specs with your coding agent, review spec-linked diffs, apply only what you approve.",
   "keywords": [
     "openspec",
