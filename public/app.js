@@ -59,6 +59,10 @@
   }
   for (const event of ['htmx:afterSettle', 'visibilitychange', 'click', 'keydown']) document.addEventListener(event, () => globalThis.requestAnimationFrame?.(recordUsage));
   globalThis.requestAnimationFrame?.(recordUsage);
+  document.addEventListener('toggle', event => {
+    if (!event.target.matches?.('#workspace-settings>details[open]')) return;
+    for (const detail of document.querySelectorAll('#workspace-settings>details[open]')) if (detail !== event.target) detail.open = false;
+  }, true);
   const themeToggle = document.getElementById('theme-toggle');
   function applyTheme(theme) {
     const dark = theme === 'dark' || theme === 'developer';
@@ -66,6 +70,8 @@
     const label = dark ? 'Switch to light mode' : 'Switch to dark mode';
     themeToggle?.setAttribute('aria-label', label);
     themeToggle?.setAttribute('title', label);
+    const visible = themeToggle?.querySelector('[data-theme-label]');
+    if (visible) visible.textContent = dark ? 'Light mode' : 'Dark mode';
   }
   try { applyTheme(localStorage.getItem('spequi-theme')); } catch { applyTheme('enterprise'); }
   themeToggle?.addEventListener('click', () => {
@@ -123,23 +129,20 @@
   const sourceDrafts = new Map(), sourcePending = new Set(), sourceMessages = new Map();
   const initialDetailsToggle = document.getElementById('toggle-review-details');
   let reviewDetailsOpen = initialDetailsToggle ? initialDetailsToggle.getAttribute('aria-expanded') === 'true' : undefined, preserveReader = null;
-  function toast(message, downloadUrl = '', href = '') {
+  function toast(message, href = '') {
     const node = document.getElementById('toast'); if (!node) return;
     node.textContent = message;
-    if (/^\/api\/reviews\/[a-zA-Z0-9_-]+\/feedback\/[a-zA-Z0-9_-]+$/.test(downloadUrl)) {
-      const link = document.createElement('a'); link.href = downloadUrl; link.download = 'openspec-review-feedback.md'; link.textContent = 'Download Markdown'; node.append(link);
-    }
     if (typeof href === 'string' && href.startsWith('/?')) { const link = document.createElement('a'); link.href = href; link.textContent = 'Open result'; node.append(link); }
     node.classList.add('visible'); clearTimeout(node.hideTimer);
-    const dismiss = () => { node.hideTimer = setTimeout(() => node.classList.remove('visible'), downloadUrl || href ? 9000 : 4500); };
+    const dismiss = () => { node.hideTimer = setTimeout(() => node.classList.remove('visible'), href ? 9000 : 4500); };
     node.onpointerenter = node.onfocusin = () => clearTimeout(node.hideTimer);
     node.onpointerleave = node.onfocusout = dismiss; dismiss();
   }
   document.addEventListener('spequi-toast', event => {
-    const { message, downloadUrl = '', href = '', persist = false } = event.detail || {};
+    const { message, href = '', persist = false } = event.detail || {};
     if (typeof message !== 'string' || !message) return;
     if (persist) try { sessionStorage.setItem('spequi-toast', JSON.stringify({ message, at: Date.now() })); } catch {}
-    toast(message, downloadUrl, href);
+    toast(message, href);
   });
   try {
     const saved = JSON.parse(sessionStorage.getItem('spequi-toast')); sessionStorage.removeItem('spequi-toast');
@@ -364,15 +367,17 @@
     const buttons = [...document.querySelectorAll('[data-source-action] button')].map(button => ({ button, disabled: button.disabled }));
     for (const { button } of buttons) button.disabled = true;
     form.setAttribute('aria-busy', 'true');
-    feedback.className = ''; feedback.textContent = kind === 'analyze' ? 'Analyzing project files locally…' : 'Preparing proposed edits in a temporary copy…';
+    feedback.className = ''; feedback.textContent = kind === 'analyze' ? 'Scanning project files…' : 'Preparing proposed edits in a temporary copy…';
     let navigate = '';
     try {
       const payload = { change, ...(kind === 'patch' ? { patch: form.querySelector('[name="patch"]').value } : {}), ...(kind === 'model' ? { analysisId: form.querySelector('[name="analysisId"]').value, files } : {}) };
       const response = await fetch(form.getAttribute('action'), { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content }, body: JSON.stringify(payload) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'The request failed. Retry with the local viewer running.');
+      const json = response.headers.get('content-type')?.includes('application/json');
+      const result = json ? await response.json() : {};
+      if (response.status === 403) throw new Error(result.error || 'Your workspace session expired. Reload the page and retry.');
+      if (!response.ok || !json) throw new Error(result.error || 'The viewer returned an unexpected response. Reload the page and retry.');
       if (result.url) { navigate = result.url; if (kind === 'patch') sourceDrafts.delete(change); }
-      else { feedback.className = 'success-message'; feedback.textContent = 'Affected-file analysis saved.'; sourceMessages.set(change, { text: feedback.textContent }); pendingRefresh = true; }
+      else { feedback.className = 'success-message'; feedback.textContent = `${result.analysis.candidates.length} matching ${result.analysis.candidates.length === 1 ? 'file' : 'files'} found · ${result.analysis.coverage.scanned} scanned.`; sourceMessages.set(change, { text: feedback.textContent }); pendingRefresh = true; }
     } catch (error) { feedback.className = 'error-message'; feedback.textContent = error.message || 'Could not reach the viewer. Retry when it is running.'; sourceMessages.set(change, { text: feedback.textContent, error: true }); }
     finally {
       sourcePending.delete(change); form.removeAttribute('aria-busy');

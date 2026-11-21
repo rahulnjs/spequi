@@ -48,7 +48,7 @@ async function addArtifactComment(root, preview, { file, body, side = 'file', st
   const change = (await inventory(root)).changes.find(change => change.id === scope.job.change);
   if (!isCommentableArtifact(change, file)) throw new Error('Select a planning document in this active change');
   const images = await commentImages(root, preview, attachments);
-  if (typeof body !== 'string' || body.length > 6000 || !body.trim() && !images.length) throw new Error('Write a comment or attach an image (up to 6,000 characters)');
+  if (typeof body !== 'string' || body.length > 6000 || !body.trim() && !images.length) throw new Error('Write a comment or attach a file (up to 6,000 characters)');
   if (!['file', 'document'].includes(side)) throw new Error('Invalid document comment side');
   const source = await readArtifact(root, file), hash = documentHash(source);
   if (sourceHash !== hash) throw new Error('This document changed. Reload it before commenting; your draft is still available.');
@@ -83,7 +83,7 @@ export async function addComment(root, preview, payload) {
   const change = result.changes.find(change => change.file === file);
   if (!change) throw new Error('Comment file is not part of this preview');
   const images = await commentImages(root, preview, attachments);
-  if (typeof body !== 'string' || body.length > 6000 || !body.trim() && !images.length) throw new Error('Write a comment or attach an image (up to 6,000 characters)');
+  if (typeof body !== 'string' || body.length > 6000 || !body.trim() && !images.length) throw new Error('Write a comment or attach a file (up to 6,000 characters)');
   if (!['file', 'current', 'proposed'].includes(side)) throw new Error('Invalid comment side');
   let first = null, last = null, snippet = '';
   if (side !== 'file') {
@@ -115,6 +115,7 @@ export async function deleteComment(root, preview, id) {
   });
 }
 
+// Retained snapshots feed agent updates and existing queued requests.
 export async function exportFeedback(root, preview) {
   const scope = await reviewScope(root, preview);
   return withLock(await location(root, preview, 'review.lock'), async () => {
@@ -125,7 +126,7 @@ export async function exportFeedback(root, preview) {
       if (!/^[a-f0-9]{64}$/.test(comment.sourceHash) || comment.change !== scope.job.change || comment.sourcePath !== expected || documentHash(await fs.readFile(await within(root, expected), 'utf8')) !== comment.sourceHash) throw new Error('Retained document changed; restore it before exporting feedback');
     }
     const images = [...new Map(comments.flatMap(comment => (comment.images || []).map(image => [image.file, { scope: comment.preview, id: image.id, hash: image.hash }]))).values()];
-    for (const image of images) if ((await readReviewImage(root, image.scope, image.id)).hash !== image.hash) throw new Error('An attached image changed; review it before exporting');
+    for (const image of images) if ((await readReviewImage(root, image.scope, image.id)).hash !== image.hash) throw new Error('An attachment changed; review it before exporting');
     const id = randomUUID(), exportedAt = new Date().toISOString();
     const relative = `.spequi/reviews/${preview}/feedback-${id}.md`;
     const planning = await planningEvidence(root, scope.job.change);
@@ -144,13 +145,6 @@ export async function feedbackExport(root, preview, id) {
   const file = `.spequi/reviews/${preview}/feedback-${id}.md`;
   const document = await fs.readFile(await within(root, file), 'utf8');
   if (record.hash !== createHash('sha256').update(document).digest('hex')) throw new Error('Feedback document changed after export; create a new export');
-  for (const image of record.images || []) if ((await readReviewImage(root, image.scope, image.id)).hash !== image.hash) throw new Error('An exported image changed; create a new feedback snapshot');
+  for (const image of record.images || []) if ((await readReviewImage(root, image.scope, image.id)).hash !== image.hash) throw new Error('An exported attachment changed; create a new feedback snapshot');
   return { ...record, file, document };
-}
-
-export async function listFeedbackExports(root, preview) {
-  const directory = await within(root, `.spequi/reviews/${safeID(preview)}`);
-  const files = await fs.readdir(directory).catch(error => { if (error.code === 'ENOENT') return []; throw error; });
-  const records = await Promise.all(files.filter(file => /^export-[a-zA-Z0-9_-]+\.json$/.test(file)).map(async file => readJSON(await within(root, `.spequi/reviews/${preview}/${file}`))));
-  return records.filter(Boolean).sort((a, b) => b.exportedAt.localeCompare(a.exportedAt)).slice(0, 3);
 }

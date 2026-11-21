@@ -9,6 +9,7 @@ node_modules/
 
 # Local sample data and planning history used to develop the viewer
 /openspec/
+/docs/workplans/
 
 # Local design records and release notes
 /DESIGN.md

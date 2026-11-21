@@ -17,7 +17,7 @@ its generated planning files, after confirmation.
 ## Planning and workflow
 
 New specs and unfinished drafts show their planning artifact tabs directly. **Workflow** stays available beside the artifact and Files tabs. Choose **Finish planning** to move the change from Drafts into Review. This does not generate implementation code.
-Existing changes open in document review from the left panel. Only unfinished drafts return to the planning workspace. Once planning is finished, document links, Requests and old planning URLs keep the change in Review. Completed task lists also open in Review. Comments and spec revisions remain available there.
+Existing changes open in document review from the left panel. Only unfinished drafts return to the planning workspace. Workflow keeps its numbered steps visible during planning, with clear statuses and disabled actions; implementation, validation, verification, sync and archive remain unavailable until Finish planning. Moving through Workflow and the document tabs preserves the planning workspace. Once planning is finished, document links, Requests and old planning URLs keep the change in Review. Completed task lists also open in Review. Comments and spec revisions remain available there.
 
 ### Planning artifacts
 
@@ -39,7 +39,7 @@ Existing changes open in document review from the left panel. Only unfinished dr
 
 Task checkbox updates are retained separately and applied with the reviewed code, using the same conflict checks. Other planning edits are not applied.
 
-Optional local file analysis and configured model proposals are available under **Affected files**. Choose **Find files** to analyze the plan locally. Patch import is not shown in the workspace. See [Offline tools](offline-and-model.md).
+Optional local file analysis and configured model proposals are available under **Affected files**. Choose **Scan files** to analyze the plan locally. Patch import is not shown in the workspace. See [Offline tools](offline-and-model.md).
 
 ### Workflow
 
@@ -49,9 +49,9 @@ Compact command labels, such as `/opsx-sync`, sit beside the step headings. Hove
 
 ### Save the plan to Git
 
-After the planning artifacts are complete, open **Prepare the plan > Save plan to Git**. Review the current branch and changed planning-file list, edit the commit message, choose an existing remote, then confirm **Commit & push plan**.
+After all planning artifacts are generated, Build opens **Push spec files** in the main canvas, with the editable commit message, agent generation and file review together. The conversation stays on the right. You can save the generated files there before choosing **Finish planning**. The same form stays available under **Workflow > Prepare the plan**. Review the branch and changed planning-file list, then write a commit message or choose **Generate with agent**. The same attached agent reads only the reviewed planning changes and returns a message you can edit; it does not commit, push or modify files. The separate in-app **Commit & push** confirmation reviews the branch, message and file list before publishing. It uses the workspace styling rather than a browser alert.
 
-Only Markdown planning documents and `.openspec.yaml` under this change enter the commit. Unrelated staged edits remain staged. Normal Git hooks still run. Pushing publishes the branch’s earlier commits too, to the same branch name on the selected remote; it never force-pushes. If the commit succeeds but push fails, it stays locally and can be pushed after fixing authentication or remote access in the CLI. When nothing needs committing, the action becomes **Push branch**. Resolve active agent requests first; a changed branch, plan, staging state or remote requires refreshing the review.
+Only Markdown planning documents and `.openspec.yaml` under this change enter the commit. Unrelated staged edits remain staged. Normal Git hooks still run. Pushing publishes the branch’s earlier commits too, to the same branch name at the automatically selected push destination; it never force-pushes. If the commit succeeds but push fails, it stays locally and can be pushed after fixing authentication or remote access in the CLI. When nothing needs committing, the action becomes **Push spec files**. Resolve active agent requests first; a changed branch, plan, staging state or remote requires refreshing the review.
 
 Status, task readiness and strict validation use the installed `openspec` CLI locally, with no agent required.
 Missing or incompatible CLI capabilities disable those actions with an explanation. Checked task boxes alone do not
@@ -115,3 +115,9 @@ Verification is read-only and does not run tests or builds. The agent writes a M
 ## Runtime updates
 
 Run `/spequi update` in the host coding agent to refresh Spequi itself. This is different from the browser composer's `/update`, which revises planning documents. Startup checks show a version notice only; no automatic update occurs. Resolve active requests before updating, stop the project server, update, reload the skill from disk and restart/reattach. Queued work and project state are retained.
+
+The destination follows the branch’s push configuration, the repository’s push default, or its existing default connection. No destination selector is shown. If Git has no clear destination, configure it in the CLI first. A changed plan invalidates an agent-generated suggestion; generate a fresh message after reviewing the new files.
+
+The push stage lists the generated documents immediately. Open a document row to review it, then return through **Push spec files**. The commit-message field and **Generate with agent** stay together. Branch information is under **Branch & push details**.
+
+If Git ignores any selected spec files, the stage identifies them and disables pushing and message generation. Adjust the ignore rules in the CLI and refresh; Spequi does not override those rules or silently push existing commits instead.

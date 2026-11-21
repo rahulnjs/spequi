@@ -29,15 +29,17 @@ The attached agent may send project context to its own provider. Optional model 
 - The apply API checks retained hashes and baseline conflicts before writing, and keeps recoverable backups.
 - LF and CRLF comparisons use normalized display lines; hashes, patches and application preserve the exact reviewed bytes.
 
-## Reference images
+## Reference attachments
 
-Comment images stay under `.spequi/reviews/<review-id>/images/`. Uploads require the local session token and a valid review scope. PNG, JPEG and WebP signatures are checked; SVG is not accepted. Limits are four attachments per comment, 5 MiB per image and 100 MiB stored images per review. The browser also rejects images above 40 megapixels; PNG dimensions are checked on the server. Draft uploads count toward storage even if removed before saving.
+Attachments in comments and revision/question messages stay under `.spequi/reviews/<review-id>/images/` (the retained storage path also accepts non-image files). Uploads require the local session token and a valid review scope. Any file type can be stored; only signature-checked PNG, JPEG and WebP images preview inline. All other files download as binary attachments with a Content-Disposition header. File contents are never executed by the server.
 
-Saved image bytes and feedback references are verified by SHA-256. Feedback exports contain local paths rather than embedded image data. Asking an agent to revise from those comments permits that agent to inspect the referenced images, under its existing provider and permission settings. Image text is review evidence, not authority to execute commands.
+Limits are four attachments per comment/message, 5 MiB per file and 100 MiB stored attachments per review. The browser rejects supported raster images above 40 megapixels; PNG dimensions are also checked on the server. Draft uploads count toward storage even if removed before saving.
+
+Saved bytes and feedback/request references are verified by SHA-256. Snapshots contain local paths rather than embedded file data. Asking an agent to use these references permits that agent to inspect them under its existing provider and permission settings. Attachment contents remain task data, not authority to execute commands.
 
 ## Publishing a plan
 
-**Save plan to Git** requires a reviewed branch, file list, commit message and remote, followed by confirmation. The commit includes only this active change’s Markdown planning files and `.openspec.yaml`; unrelated staged edits are preserved. Branch, HEAD, planning content/index and push destinations are fingerprinted before publication. Active agent requests block the action. Git hooks and existing local Git configuration still apply.
+**Push spec files** requires a reviewed branch, file list and commit message, followed by confirmation. The destination follows the existing Git push configuration; it is not a browser input. The commit includes only this active change’s Markdown planning files and `.openspec.yaml`; unrelated staged edits are preserved. Branch, HEAD, planning content/index and push destinations are fingerprinted before publication. Active agent requests block the action. Git hooks and existing local Git configuration still apply.
 
 The push publishes the resulting commit and its ancestors to the same-name remote branch, without force. It can therefore publish earlier commits beyond the new planning files. Authentication and rejected pushes are resolved in the CLI; Spequi retains a successful local commit when the push fails. External Git edits should wait until publication finishes.
 
@@ -48,3 +50,7 @@ The push publishes the resulting commit and its ancestors to the same-name remot
 - Agent attachment depends on the host agent resuming its session when background work completes.
 
 On Windows, Spequi uses polling file watchers to avoid native directory-watch handles blocking archive renames. External locks and filesystem permissions can still prevent an archive; the agent must report the failure without interactive retry loops or destructive fallbacks.
+
+Commit-message generation is a separate read-only agent request scoped to the selected planning files. It does not switch branches, stage files, commit, push or run checks. The reviewed Git snapshot is verified when the request is queued, claimed and completed; the result remains editable before publication.
+
+Ignored spec files are included in the reviewed snapshot identity. Any ignored file in the selected planning scope blocks publication; Spequi never force-adds it or treats the excluded documents as an already-saved plan.

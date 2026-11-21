@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
+import { finishDrafts } from '../../src/drafts.mjs';
 import { initProject } from '../../src/project.mjs';
 import { startServer } from '../../src/server.mjs';
 import { writeJSON, runtime } from '../../src/files.mjs';
@@ -89,7 +90,11 @@ try {
   }
   for (const theme of ['enterprise', 'dark']) {
     const suffix = theme === 'dark' ? 'dark' : 'light';
+    await writeJSON(runtime(root, 'planning-finished.json'), {});
+    await writeJSON(runtime(root, 'drafts', `${draft}.json`), { id: draft, change, creationId: creation, message: 'Make product emails opt-in for new accounts.', planMode: 'full', createdAt: at, updatedAt: at });
     await capture(`build-${suffix}`, `/?view=studio&change=${change}&draft=${draft}&plan=proposal.md`, theme);
+    if (suffix === 'light') await capture('build-ready-light', `/?view=studio&change=${change}&draft=${draft}&plan=publish`, theme);
+    await finishDrafts(root, change);
     await capture(`file-review-${suffix}`, `/?change=${change}&view=preview&job=${preview}&file=src/preferences.mjs`, theme);
     await capture(`workflow-${suffix}`, `/?change=${change}&view=workflow`, theme, `document.getElementById('plan-publish').open = true`);
     await capture(`settings-${suffix}`, `/?change=${change}&doc=${proposal}&view=rendered`, theme, `document.querySelector('[data-privacy-toggle]').click()`);

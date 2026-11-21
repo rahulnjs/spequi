@@ -24,10 +24,10 @@ export function parseCommand(value){
   if(['new','status','validate'].includes(definition.name)&&message)throw new Error(`/${definition.name} does not accept arguments. Use the new-spec form to describe a new idea.`);
   return {...definition,message};
 }
-export async function requestCommand(root,{command,change='',requestKey,confirmBranch},options={}){
+export async function requestCommand(root,{command,change='',requestKey,confirmBranch,attachments},options={}){
   const item=parseCommand(command);
   if(item.action==='new')return {url:'/?view=studio&new=1'};
-  const result=await requestLifecycle(root,{action:item.action,change,message:item.message,requestKey,confirmBranch},options);
+  const result=await requestLifecycle(root,{action:item.action,change,message:item.message,requestKey,confirmBranch,attachments},options);
   if(item.name==='status'){
     if(result.error)throw new Error(result.error);
     const ready=result.readiness;

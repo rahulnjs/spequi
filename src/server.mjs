@@ -1,4 +1,4 @@
-import { publishPlan } from './plan-git.mjs';
+import { publishPlan, requestCommitMessage } from './plan-git.mjs';
 import { saveReviewImage, readReviewImage } from './review-images.mjs';
 import http from 'node:http';
 import * as fs from 'node:fs/promises';
@@ -14,7 +14,7 @@ import { inventory, readArtifact, escape, jobMatchesChange } from './specs.mjs';
 import { listJobs, enqueue, updateJob, agentStatus, getJob, pendingStatuses, createJobReader, claimNext, heartbeat, stopPolling, queueStatus } from './jobs.mjs';
 import { applyPreview, previewResult } from './previews.mjs';
 import { workspace, shell } from './views.mjs';
-import { addComment, deleteComment, exportFeedback, feedbackExport, reviewScope } from './review-store.mjs';
+import { addComment, deleteComment, exportFeedback, reviewScope } from './review-store.mjs';
 import { analyzeChange } from './spec-impact.mjs';
 import { directPreview } from './direct-preview.mjs';
 import { requestLifecycle, previewPlanChanged } from './lifecycle.mjs';
@@ -144,16 +144,11 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
           const inbox = requestPage(jobs, {}, { agent, dismissed: await inboxState(root) });
           return send(response, 200, JSON.stringify({ notifications: jobs.filter(job => !job.hiddenAt).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 100).map(({ id, action, change, status, updatedAt }) => ({ id, action, change, status, updatedAt })), agent, attention: inbox.attention, inboxCount: inbox.total, revision: JSON.stringify(relevant.map(job => [job.id, job.status])), thread: conversation(relevant, agent), drafts: draftStates, active: jobs.filter(job => pendingStatuses.includes(job.status)).map(job => ({ id: job.id, change: job.change, status: job.status })) }), 'application/json');
         }
-        const imageMatch = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/images\/([a-f0-9-]{36}\.(?:png|jpg|webp))$/);
+        const imageMatch = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/(?:images|attachments)\/([a-f0-9-]{36}\.[a-z0-9]{1,12})$/);
         if (imageMatch) {
           await reviewScope(root, imageMatch[1]);
           const image = await readReviewImage(root, imageMatch[1], imageMatch[2]);
-          return send(response, 200, image.bytes, image.type);
-        }
-        const feedbackMatch = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/feedback\/([a-zA-Z0-9_-]+)$/);
-        if (feedbackMatch) {
-          const exported = await feedbackExport(root, feedbackMatch[1], feedbackMatch[2]);
-          return send(response, 200, exported.document, 'text/markdown; charset=utf-8', { 'Content-Disposition': 'attachment; filename="openspec-review-feedback.md"' });
+          return send(response, 200, image.bytes, image.type, image.type === 'application/octet-stream' ? { 'Content-Disposition': `attachment; filename="${image.id}"; filename*=UTF-8''${encodeURIComponent(image.name)}` } : {});
         }
         const patchMatch = url.pathname.match(/^\/api\/previews\/([a-zA-Z0-9_-]+)\/patch$/);
         if (patchMatch) {
@@ -170,13 +165,17 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
         });
       }
       if (request.method !== 'POST') return send(response, 405, 'Method not allowed');
-      if (![origin, `http://localhost:${server.address().port}`].includes(request.headers.origin) || !tokenMatches(request.headers['x-csrf-token'], csrf)) return send(response, 403, '<p class="error-message">Local session verification failed. Reload the viewer and retry.</p>');
-      const imageUpload = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/images$/);
+      if (![origin, `http://localhost:${server.address().port}`].includes(request.headers.origin) || !tokenMatches(request.headers['x-csrf-token'], csrf)) {
+        const error = 'Your workspace session expired. Reload the page and retry.';
+        return request.headers.accept?.includes('application/json') ? send(response, 403, JSON.stringify({ error }), 'application/json') : send(response, 403, `<p class="error-message">${error}</p>`);
+      }
+      const imageUpload = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/(?:images|attachments)$/);
       const payload = await body(request, imageUpload ? 7 * 1024 * 1024 : url.pathname.startsWith('/api/source-preview/') ? 2 * 1024 * 1024 : 100000);
       if (imageUpload) {
         await reviewScope(root, imageUpload[1]);
         return send(response, 201, JSON.stringify({ image: await saveReviewImage(root, imageUpload[1], payload) }), 'application/json');
       }
+      if (url.pathname === '/api/plan-git/message') return send(response, 201, JSON.stringify(await requestCommitMessage(root, payload)), 'application/json');
       if (url.pathname === '/api/plan-git') return send(response, 200, JSON.stringify(await publishPlan(root, payload)), 'application/json');
       if (url.pathname === '/api/privacy') {
         const consent = await saveAnalyticsConsent(root, payload.choice);
@@ -231,7 +230,7 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
         const query = new URLSearchParams({ change: job.change, view: 'preview', job: job.id });
         return send(response, 201, JSON.stringify({ job: { id: job.id, change: job.change, origin: job.origin, status: job.status }, url: `/?${query}` }), 'application/json', { 'HX-Trigger': 'workspace-updated' });
       }
-      const reviewMatch = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/(comments|export|update-specs|impact)$/);
+      const reviewMatch = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/(comments|update-specs|impact)$/);
       if (reviewMatch) {
         const [, preview, action] = reviewMatch;
         if (action === 'comments') {
@@ -243,12 +242,10 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
           await enqueue(root, { action: 'impact', reviewPreview: preview, reviewFile: payload.file });
           return send(response, 201, '', undefined, { 'HX-Trigger': JSON.stringify({ 'spequi-toast': { message: 'Impact analysis queued for your attached agent.' }, 'workspace-updated': true }) });
         }
-        const exported = await exportFeedback(root, preview);
-        const update = action === 'update-specs' ? await enqueue(root, { action: 'update-specs', reviewPreview: preview, feedbackId: exported.id }) : null;
-        const downloadUrl = `/api/reviews/${preview}/feedback/${exported.id}`;
-        if (request.headers.accept?.includes('application/json')) return send(response, 201, JSON.stringify({ exported: { ...exported, downloadUrl }, ...(update ? { update: { id: update.id, change: update.change, status: update.status, reviewPreview: update.reviewPreview, feedbackId: update.feedbackId } } : {}) }), 'application/json');
-        if (update) return send(response, 201, '', undefined, { 'HX-Trigger': JSON.stringify({ 'spequi-toast': { message: 'OpenSpec planning update queued using this feedback document.', downloadUrl }, 'workspace-updated': true }) });
-        return send(response, 201, `<p class="success-message">${action === 'update-specs' ? 'OpenSpec planning update queued using this feedback document.' : 'Feedback document saved.'} <a href="${downloadUrl}" download="openspec-review-feedback.md">Download Markdown</a></p>`, undefined, { 'HX-Trigger': 'workspace-updated' });
+        const snapshot = await exportFeedback(root, preview);
+        const update = await enqueue(root, { action: 'update-specs', reviewPreview: preview, feedbackId: snapshot.id });
+        if (request.headers.accept?.includes('application/json')) return send(response, 201, JSON.stringify({ feedback: { id: snapshot.id, preview, count: snapshot.count }, update: { id: update.id, change: update.change, status: update.status, reviewPreview: update.reviewPreview, feedbackId: update.feedbackId } }), 'application/json');
+        return send(response, 201, '', undefined, { 'HX-Trigger': JSON.stringify({ 'spequi-toast': { message: 'Spec update queued for your attached agent.' }, 'workspace-updated': true }) });
       }
       const deleteMatch = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/comments\/([a-zA-Z0-9_-]+)\/delete$/);
       if (deleteMatch) {

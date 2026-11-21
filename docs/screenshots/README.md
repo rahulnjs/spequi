@@ -1,10 +1,12 @@
 # Workspace screenshots
 
-These PNGs show the real workspace in light and dark themes: planning, file review, Workflow with optional plan publication, and Settings. The README uses planning and review images; the public landing page embeds the review pair.
+Nine documentation images are retained: the README uses the light planning/review pair; the public landing page embeds those views in both themes. Workflow and Settings examples below have linked dark versions. The Git form has one light capture. Other preview captures are not retained.
 
 | Workflow | Settings |
 | --- | --- |
 | ![Workflow with planning publication](workflow-light.png) | ![Grouped workspace settings](settings-light.png) |
+
+[Build: spec file review and push](build-ready-light.png).
 
 Dark versions: [Workflow](workflow-dark.png), [Settings](settings-dark.png), [planning](build-dark.png), [file review](file-review-dark.png).
 

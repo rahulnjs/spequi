@@ -174,7 +174,7 @@ test('model generation rejects stale analysis, unselected edits, malformed repli
   assert.ok((await listJobs(root)).every(job => job.status === 'failed'));
 });
 
-test('HTTP tools enforce session boundaries and complete analysis/model/review/export/apply without an agent', async t => {
+test('HTTP tools enforce session boundaries and complete analysis/model/review/apply without an agent', async t => {
   const root = await fixture(t);
   const requests = await modelFixture(t, root, (_req, res) => answer(res, [{ file: 'src/auth.mjs', content: 'export function resetPassword() { return true; }\n' }]));
   const viewer = await startServer({ root, port: 0, quiet: true }); t.after(() => viewer.close());
@@ -199,7 +199,6 @@ test('HTTP tools enforce session boundaries and complete analysis/model/review/e
   assert.deepEqual([...document.querySelectorAll('.changed-files-nav [data-file-path]')].map(node => node.dataset.filePath), ['src/auth.mjs']);
   assert.equal((await fetch(`${viewer.origin}/api/previews/${generated.job.id}/patch`)).status, 200);
   const comment = await post(`/api/reviews/${generated.job.id}/comments`, { file: 'src/auth.mjs', body: 'Review this model proposal.' }); assert.equal(comment.status, 201);
-  const exported = await post(`/api/reviews/${generated.job.id}/export`, {}); assert.equal(exported.status, 201);
   const applied = await post(`/api/previews/${generated.job.id}/apply`, {}); assert.equal(applied.status, 200);
   assert.equal(await fs.readFile(path.join(root, 'src/auth.mjs'), 'utf8'), 'export function resetPassword() { return true; }\n');
   assert.equal((await (await fetch(viewer.origin + '/api/agent-status')).json()).connected, false);

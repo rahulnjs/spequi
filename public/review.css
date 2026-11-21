@@ -271,9 +271,6 @@
 @media(max-width:760px){.review-comment-form textarea,.document-discussion textarea,.document-inline-thread textarea,.diff-inline-thread textarea{font-size:16px}.comment-composer-actions button{min-height:36px}}
 
 /* Review feedback stays inline; the attached agent is the primary path. */
-.review-feedback-actions .review-export{width:32px;min-height:32px;padding:6px;border-color:transparent;background:transparent;color:var(--muted)}
-.review-feedback-actions .review-export:hover{background:var(--rail);color:var(--text)}
-.review-export-label{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .review-update-hint{margin:0 0 12px;font-size:10px;line-height:1.6;color:var(--muted)}
 .comment-group-path>small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
 .comment-group-count{background:transparent;padding:0;font-size:10px}
@@ -283,7 +280,7 @@
 .review-comment .comment-source-link{background:transparent;padding:0;border-radius:0;font-size:10px;gap:5px}
 .review-comment .comment-source-link svg{width:11px;height:11px}
 .review-comment .saved-comment-thread>.comment-source-context{padding:0 0 8px 18px}
-@media(pointer:coarse){.review-feedback-actions .button,.comment-view-filter>button,.review-comment .saved-comment-thread>summary{min-height:44px}.review-feedback-actions .review-export{width:44px}.review-comment .comment-delete{min-height:32px;width:32px}}
+@media(pointer:coarse){.review-feedback-actions .button,.comment-view-filter>button,.review-comment .saved-comment-thread>summary{min-height:44px}.review-comment .comment-delete{min-height:32px;width:32px}}
 
 .comment-image-toolbar{display:flex;align-items:center;gap:8px;margin:7px 0 10px;font-size:10px;color:var(--muted)}
 .comment-image-add{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--text);font-size:11px;cursor:pointer}
@@ -295,3 +292,12 @@
 .comment-image{display:inline-flex;flex-direction:column;gap:4px;max-width:240px;margin:8px 8px 8px 0;vertical-align:top;font-size:10px;overflow-wrap:anywhere;color:var(--accent-text)}
 .comment-image img{max-width:100%;max-height:180px;object-fit:contain;border:1px solid var(--line);border-radius:var(--radius)}
 @media(max-width:760px){.comment-image-add,.comment-image-draft button{min-height:36px}.comment-image-toolbar>span{display:none}}
+
+.comment-attachment-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-right:auto}
+.comment-attachment-actions>.comment-image-add{min-height:32px}
+.attachment-paste-hint{font-size:11px;color:var(--muted);line-height:1.5}
+.comment-composer-actions{flex-wrap:wrap}
+.comment-image-drafts:empty{display:none}
+.comment-image-draft{width:auto;max-width:160px;padding:6px;border:1px solid var(--line);border-radius:var(--radius)}
+.comment-image-draft>span{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.comment-image>svg{width:24px;height:24px}

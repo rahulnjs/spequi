@@ -15,6 +15,8 @@ Files compares the current project with the proposed implementation:
 - Context folding and line wrapping
 - An inspector that follows the selected file with dependency impact and saved comments
 
+The generating agent checks off completed implementation tasks in the isolated `tasks.md`. **Apply changes** saves those checkbox updates together with the reviewed code, with the same conflict checks and backups. Unperformed tests, checks and manual review tasks stay unchecked. Regenerate older previews that did not include task updates.
+
 ## Spec context in diffs
 
 In both diff modes, linked change blocks show the requirement, scenario or planning decision behind the edit.
@@ -36,17 +38,16 @@ limitations. See [Security and limits](security.md#known-limitations).
 
 Comment on a whole file, a code range, or a passage in a planning document, before or after Finish planning. Notes retain the exact reviewed version.
 
-Paste a clipboard image into a comment editor or use **Add image** to choose files. Each comment supports up to four PNG, JPEG or WebP images, 5 MiB each and 40 megapixels in the browser. Image-only comments are supported. Thumbnails open the retained original; remove a draft attachment before saving if it is not needed.
+Use **Attach files** beside Save/Cancel, or beside Send in the revision/question composer. Choose any file type, up to four files per comment or message and 5 MiB each. Ordinary text paste stays in the editor; clipboard images and files become attachments. Image-only and file-only comments or messages are supported. Supported raster images show thumbnails; other files download instead of executing in the browser.
 
-Feedback exports include local image paths and hashes, so the attached agent can inspect the same reference images using its host’s image viewer. The downloaded Markdown refers to local files; it does not bundle image bytes. Images are stored locally with the review, and exporting or updating the spec checks that they have not changed.
+Retained feedback snapshots and queued requests include retained local paths and SHA-256 hashes. The agent reads those exact references with its file/image tools and asks in the app if a format is unsupported. The browser checks supported raster images against a 40-megapixel limit.
 
-- **Export MD** downloads an immutable Markdown review brief.
-- **Update spec** queues a planning revision for the attached agent from that exact snapshot.
+**Update spec** saves an immutable feedback snapshot and queues a planning revision for the attached agent. There is no separate instructions download.
 
-Exporting feedback does not edit a specification or apply code. Spec revisions and implementation previews are separate actions.
+Saving the feedback snapshot does not apply code. Spec revisions and implementation previews are separate actions.
 Generate a fresh preview when the plan changes.
 
-The conversation omits repeated empty-state instructions. **Comments and revisions** provides a compact disclosure for review notes while leaving more space for the discussion and code.
+The conversation omits repeated empty-state instructions. **Planning comments** appears when a draft has review notes while leaving more space for the discussion and code.
 
 ## Requests inbox
 
@@ -59,4 +60,6 @@ Open **Requests** in the header for an inbox grouped by spec.
 - Cancel and supported retry actions stay available. Destructive deletion is confined to history.
 - Active work stays visible while you browse another spec. Partially edited planning work must be reviewed before continuing.
 
-Requests, Agent and MCPs stay in the header. Open **Settings** for Docs, appearance, optional desktop notifications, per-project usage sharing and version information. Header panels share the same top and right alignment.
+Requests, Agent and MCPs stay in the header. Open **Settings** for Docs, the conditional Light/Dark mode action, optional desktop notifications, per-project usage sharing and version information. Header panels share the same top and right alignment.
+
+In expanded conversation mode, the composer follows the same content width as the discussion, with no surrounding tinted strip or top border. Detailed Activity logs stay in the CLI; the UI keeps status, questions, failures and final results.

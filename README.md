@@ -70,14 +70,14 @@ Usage sharing is opt-in **per project** on the first web visit, including existi
 
 - **Planning boundaries:** next-artifact, full-plan and revision requests edit planning documents only; mentioned commands are not executed
 - **Branch per change:** create or switch branches before the agent starts, including spec creation; confirm reuse of an existing branch
-- **Save the plan to Git:** after planning, open **Workflow > Prepare the plan > Save plan to Git**. Review the branch, planning files, message and remote before confirming commit and push. Unrelated staged edits stay staged; pushing also publishes earlier branch commits
+- **Save the plan to Git:** after plan generation, use the main **Push spec files** stage in Build or **Workflow > Prepare the plan > Push spec files**. Review the branch and planning files, write a message or choose **Generate with agent**, then confirm. Spequi uses the configured push destination automatically. Unrelated staged edits stay staged; pushing also publishes earlier branch commits
 - **Spec-linked review:** linked requirements and scenarios, collapsed by default to keep code in focus
 - **Unified and split diffs** with syntax highlighting, changed-word emphasis, folding and wrapping
 - **Impact analysis:** direct and downstream dependencies, related tests, export changes
-- **Precise feedback:** comments on files, code ranges and planning Markdown passages, including before Finish planning; paste or choose reference images in comment editors, export a review brief or queue a spec update
+- **Precise feedback:** comments on files, code ranges and planning Markdown passages, including before Finish planning; attach reference files or paste text and images in comments and the revision/question composer, send all review comments to your agent for a spec update
 - **Questions where you need them:** a distinct header marker shows when an answer is needed; read and answer directly in Agent or Requests; cancel an obsolete waiting request to free the queue
 - **Optional desktop notifications:** enable them under **Settings > Notifications** for completed plans and diffs, questions, and failures while you’re in another tab; keep the workspace open
-- **Focused header:** Requests, Agent and MCPs stay visible; Docs, appearance, notifications, usage sharing and update information live in Settings
+- **Focused header:** Requests, Agent and MCPs stay visible; Docs, the Light/Dark mode action, notifications, usage sharing and update information live in Settings; only one Settings section opens at a time
 - **Works offline:** browsing, review and affected-file analysis need no attached agent
 - **Light and dark themes**
 
