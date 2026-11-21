@@ -90,6 +90,7 @@
       if (!payload.answer) { show(form, 'Choose an option or write an answer to continue.', true); return; }
       delete payload.choice;
     }
+    if (form.hasAttribute('data-plan-publish') && !window.confirm(`Commit only this change’s planning files and push branch ${form.dataset.branch}? Earlier commits on the branch will also be published. Unrelated staged edits are kept.`)) return;
     remember(form); busy.add(id); form.setAttribute('aria-busy', 'true');
     const buttons = [...form.querySelectorAll('button[type=submit]'), ...document.querySelectorAll(`button[type=submit][form="${form.id}"]`)].map(button => ({ button, disabled: button.disabled }));
     for (const { button } of buttons) button.disabled = true;

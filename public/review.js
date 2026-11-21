@@ -1,5 +1,6 @@
 (() => {
   const drafts = new Map();
+  const imageDrafts = new Map(), imageUploads = new Set();
   const saving = new Set();
   const deleting = new Set();
   const deleteMessages = new Map();
@@ -13,6 +14,57 @@
   const form = () => document.getElementById('review-comment-form');
   const field = (node, name) => node.querySelector(`[name="${name}"]`);
   const key = node => `${node.dataset.preview}:${node.dataset.file}`;
+  function renderImageDraft(node) {
+    const host = node.querySelector('[data-comment-images]'); if (!host) return;
+    const images = imageDrafts.get(key(node)) || [];
+    host.replaceChildren();
+    for (const image of images) {
+      const tile = document.createElement('div'), picture = document.createElement('img'), remove = document.createElement('button');
+      tile.className = 'comment-image-draft'; picture.src = image.url; picture.alt = image.name;
+      remove.type = 'button'; remove.dataset.commentImageRemove = image.id; remove.textContent = 'Remove'; remove.setAttribute('aria-label', `Remove ${image.name}`);
+      tile.append(picture, remove); host.append(tile);
+    }
+    field(node, 'body').required = !images.length;
+    node.querySelector('[type=submit]').disabled = saving.has(key(node)) || imageUploads.has(key(node));
+  }
+  async function uploadImages(node, files) {
+    const id = key(node), selected = [...files];
+    if (imageUploads.has(id) || saving.has(id)) return;
+    const report = node.querySelector('[data-composer-feedback]');
+    if ((imageDrafts.get(id)?.length || 0) + selected.length > 4) { report.textContent = 'Attach up to four images per comment.'; return; }
+    imageUploads.add(id); renderImageDraft(node); report.textContent = 'Adding image…';
+    try {
+      for (const file of selected) {
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) throw new Error('Choose PNG, JPEG or WebP images up to 5 MiB each.');
+        const image = await createImageBitmap(file);
+        const pixels = image.width * image.height; image.close();
+        if (pixels > 40000000) throw new Error('Choose an image smaller than 40 megapixels.');
+        const data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result.split(',')[1]); reader.onerror = () => reject(new Error('Could not read this image.')); reader.readAsDataURL(file); });
+        const response = await fetch(`/api/reviews/${encodeURIComponent(node.dataset.preview)}/images`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content }, body: JSON.stringify({ name: file.name, type: file.type, data }) });
+        const result = await response.json();
+        if (!response.ok || !result.image) throw new Error(result.error || 'Could not upload this image.');
+        imageDrafts.set(id, [...imageDrafts.get(id) || [], result.image]);
+      }
+      report.textContent = '';
+    } catch (error) { report.textContent = error.message; }
+    finally { imageUploads.delete(id); const active = form(); if (active && key(active) === id) { renderImageDraft(active); showSelection(active); } }
+  }
+  document.addEventListener('paste', event => {
+    const node = event.target.closest('#review-comment-form'); if (!node) return;
+    const images = [...event.clipboardData?.files || []].filter(file => file.type.startsWith('image/'));
+    if (images.length) { event.preventDefault(); void uploadImages(node, images); }
+  });
+  document.addEventListener('change', event => {
+    if (!event.target.matches('[data-comment-image-input]')) return;
+    const files = [...event.target.files]; event.target.value = '';
+    void uploadImages(event.target.closest('form'), files);
+  });
+  document.addEventListener('click', event => {
+    const choose = event.target.closest('[data-comment-image-choose]');
+    if (choose) choose.closest('form').querySelector('[data-comment-image-input]').click();
+    const remove = event.target.closest('[data-comment-image-remove]');
+    if (remove) { const node = remove.closest('form'), id = key(node); imageDrafts.set(id, (imageDrafts.get(id) || []).filter(image => image.id !== remove.dataset.commentImageRemove)); renderImageDraft(node); showSelection(node); }
+  });
   function remember() {
     const node = form(); if (!node) return;
     drafts.set(key(node), { ...Object.fromEntries(['body', 'side', 'start', 'end'].map(name => [name, field(node, name).value])), ...(node.dataset.sourceHash ? { sourceHash: node.dataset.sourceHash } : {}) });
@@ -34,7 +86,7 @@
     if (contextRow) contextRow.hidden = Boolean(node.dataset.sourceHash && side === 'file' && !stale && node.closest('[data-document-composer-home]'));
     const general = document.querySelector('[data-general-document-comment]');
     if (general) general.hidden = !node.closest('.document-inline-thread') && side === 'file' && !stale;
-    const draft = field(node, 'body').value.trim().length > 0;
+    const draft = field(node, 'body').value.trim().length > 0 || Boolean(imageDrafts.get(key(node))?.length);
     const label = document.querySelector('[data-composer-label]'), marker = document.querySelector('[data-comment-draft]');
     if (label) label.textContent = draft ? 'Continue comment' : 'Add a comment';
     if (marker) marker.hidden = !draft;
@@ -79,11 +131,12 @@
       for (const name of ['body', 'side', 'start', 'end']) field(node, name).value = saved[name];
       if (saved.sourceHash) node.dataset.sourceHash = saved.sourceHash;
     }
+    renderImageDraft(node);
     placeDocumentComposer(inlineTargets.get(key(node)));
     placeDiffComposer(diffTargets.get(key(node)));
     showSelection(node);
     setComposer(node, composerStates.get(key(node)) ?? (Boolean(saved?.body) || document.getElementById('review-comment-composer').hasAttribute('data-default-open')));
-    node.querySelector('[type="submit"]').disabled = saving.has(key(node));
+    node.querySelector('[type="submit"]').disabled = saving.has(key(node)) || imageUploads.has(key(node));
     const query = new URLSearchParams(location.search);
     const line = Number(query.get('line')), side = query.get('side'), commentID = query.get('comment');
     const locationKey = `${key(node)}:${side}:${line}:${commentID || ''}`;
@@ -324,8 +377,9 @@
   document.addEventListener('submit', async event => {
     const node = event.target.closest('#review-comment-form'); if (!node) return;
     event.preventDefault(); event.stopImmediatePropagation();
-    const submittedKey = key(node); if (saving.has(submittedKey)) return;
+    const submittedKey = key(node); if (saving.has(submittedKey) || imageUploads.has(submittedKey)) return;
     const payload = new URLSearchParams({ file: node.dataset.file, body: field(node, 'body').value, side: field(node, 'side').value });
+    payload.set('attachments', JSON.stringify((imageDrafts.get(submittedKey) || []).map(image => image.id)));
     if (node.dataset.sourceHash) payload.set('sourceHash', node.dataset.sourceHash);
     if (payload.get('side') !== 'file') for (const name of ['start', 'end']) payload.set(name, field(node, name).value);
     remember(); setComposer(node, true); saving.add(submittedKey); node.setAttribute('aria-busy', 'true'); node.querySelector('[type="submit"]').disabled = true;
@@ -348,10 +402,11 @@
   document.addEventListener('review-saved', event => {
     const savedKey = `${event.detail.preview}:${event.detail.file}`;
     if (event.detail.body !== undefined && drafts.get(savedKey)?.body !== event.detail.body) return;
-    drafts.delete(savedKey);
+    drafts.delete(savedKey); imageDrafts.delete(savedKey);
     const node = form(); if (!node || key(node) !== savedKey) return;
     anchor = null;
     inlineTargets.delete(savedKey); diffTargets.delete(savedKey); placeDocumentComposer(); placeDiffComposer();
+    renderImageDraft(node);
     field(node, 'body').value = ''; field(node, 'side').value = 'file'; field(node, 'start').value = ''; field(node, 'end').value = '';
     showSelection(node);
     setComposer(node, Boolean(document.getElementById('document-discussion')));

@@ -1,3 +1,5 @@
+import { publishPlan } from './plan-git.mjs';
+import { saveReviewImage, readReviewImage } from './review-images.mjs';
 import http from 'node:http';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
@@ -12,7 +14,7 @@ import { inventory, readArtifact, escape, jobMatchesChange } from './specs.mjs';
 import { listJobs, enqueue, updateJob, agentStatus, getJob, pendingStatuses, createJobReader, claimNext, heartbeat, stopPolling, queueStatus } from './jobs.mjs';
 import { applyPreview, previewResult } from './previews.mjs';
 import { workspace, shell } from './views.mjs';
-import { addComment, deleteComment, exportFeedback, feedbackExport } from './review-store.mjs';
+import { addComment, deleteComment, exportFeedback, feedbackExport, reviewScope } from './review-store.mjs';
 import { analyzeChange } from './spec-impact.mjs';
 import { directPreview } from './direct-preview.mjs';
 import { requestLifecycle, previewPlanChanged } from './lifecycle.mjs';
@@ -142,6 +144,12 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
           const inbox = requestPage(jobs, {}, { agent, dismissed: await inboxState(root) });
           return send(response, 200, JSON.stringify({ notifications: jobs.filter(job => !job.hiddenAt).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 100).map(({ id, action, change, status, updatedAt }) => ({ id, action, change, status, updatedAt })), agent, attention: inbox.attention, inboxCount: inbox.total, revision: JSON.stringify(relevant.map(job => [job.id, job.status])), thread: conversation(relevant, agent), drafts: draftStates, active: jobs.filter(job => pendingStatuses.includes(job.status)).map(job => ({ id: job.id, change: job.change, status: job.status })) }), 'application/json');
         }
+        const imageMatch = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/images\/([a-f0-9-]{36}\.(?:png|jpg|webp))$/);
+        if (imageMatch) {
+          await reviewScope(root, imageMatch[1]);
+          const image = await readReviewImage(root, imageMatch[1], imageMatch[2]);
+          return send(response, 200, image.bytes, image.type);
+        }
         const feedbackMatch = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/feedback\/([a-zA-Z0-9_-]+)$/);
         if (feedbackMatch) {
           const exported = await feedbackExport(root, feedbackMatch[1], feedbackMatch[2]);
@@ -163,7 +171,13 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
       }
       if (request.method !== 'POST') return send(response, 405, 'Method not allowed');
       if (![origin, `http://localhost:${server.address().port}`].includes(request.headers.origin) || !tokenMatches(request.headers['x-csrf-token'], csrf)) return send(response, 403, '<p class="error-message">Local session verification failed. Reload the viewer and retry.</p>');
-      const payload = await body(request, url.pathname.startsWith('/api/source-preview/') ? 2 * 1024 * 1024 : 100000);
+      const imageUpload = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/images$/);
+      const payload = await body(request, imageUpload ? 7 * 1024 * 1024 : url.pathname.startsWith('/api/source-preview/') ? 2 * 1024 * 1024 : 100000);
+      if (imageUpload) {
+        await reviewScope(root, imageUpload[1]);
+        return send(response, 201, JSON.stringify({ image: await saveReviewImage(root, imageUpload[1], payload) }), 'application/json');
+      }
+      if (url.pathname === '/api/plan-git') return send(response, 200, JSON.stringify(await publishPlan(root, payload)), 'application/json');
       if (url.pathname === '/api/privacy') {
         const consent = await saveAnalyticsConsent(root, payload.choice);
         if (consent.choice !== 'off') await trackEvent(root, 'project_used');

@@ -17,7 +17,7 @@ its generated planning files, after confirmation.
 ## Planning and workflow
 
 New specs and unfinished drafts show their planning artifact tabs directly. **Workflow** stays available beside the artifact and Files tabs. Choose **Finish planning** to move the change from Drafts into Review. This does not generate implementation code.
-Existing changes open in document review from the left panel. Continue a draft or open a planning request from **Requests** to return to its planning workspace.
+Existing changes open in document review from the left panel. Only unfinished drafts return to the planning workspace. Once planning is finished, document links, Requests and old planning URLs keep the change in Review. Completed task lists also open in Review. Comments and spec revisions remain available there.
 
 ### Planning artifacts
 
@@ -39,11 +39,19 @@ Existing changes open in document review from the left panel. Continue a draft o
 
 Task checkbox updates are retained separately and applied with the reviewed code, using the same conflict checks. Other planning edits are not applied.
 
-Optional local file analysis and configured model proposals are available under **Explore affected files**. Patch import is not shown in the workspace. See [Offline tools](offline-and-model.md).
+Optional local file analysis and configured model proposals are available under **Affected files**. Choose **Find files** to analyze the plan locally. Patch import is not shown in the workspace. See [Offline tools](offline-and-model.md).
 
 ### Workflow
 
 Open **Workflow** for the numbered steps: prepare the plan; generate, review and apply; optionally validate specs and verify implementation; sync specs; archive. Each step explains what it does, shows its current state, and identifies its actual OpenSpec command or agent skill. The separate Commands dropdown has been removed. Validation and verification run only when explicitly requested. Archive confirmations appear in the conversation.
+
+Compact command labels, such as `/opsx-sync`, sit beside the step headings. Hover for the underlying agent skill. **Archive change** is one action; the agent checks unfinished tasks and spec conflicts and asks for any needed confirmation in the conversation.
+
+### Save the plan to Git
+
+After the planning artifacts are complete, open **Prepare the plan > Save plan to Git**. Review the current branch and changed planning-file list, edit the commit message, choose an existing remote, then confirm **Commit & push plan**.
+
+Only Markdown planning documents and `.openspec.yaml` under this change enter the commit. Unrelated staged edits remain staged. Normal Git hooks still run. Pushing publishes the branch’s earlier commits too, to the same branch name on the selected remote; it never force-pushes. If the commit succeeds but push fails, it stays locally and can be pushed after fixing authentication or remote access in the CLI. When nothing needs committing, the action becomes **Push branch**. Resolve active agent requests first; a changed branch, plan, staging state or remote requires refreshing the review.
 
 Status, task readiness and strict validation use the installed `openspec` CLI locally, with no agent required.
 Missing or incompatible CLI capabilities disable those actions with an explanation. Checked task boxes alone do not
@@ -78,7 +86,7 @@ Reasoning and writing requests use the current session running the viewer skill.
 - Pending questions and reply controls appear directly in the Agent panel and Requests inbox. Replies survive live list refreshes.
 - Queued and awaiting-input requests can be cancelled. Cancelling an old waiting request frees the queue and keeps existing files. If its owner is disconnected, you can save an answer and resume the same coding session.
 - Longer requests can take a few minutes. Results appear in the workspace when ready. Check your CLI for permissions or other actions waiting for you.
-- Completion appears in an in-app toast. Open the header bell and choose **Enable notifications** to receive optional browser notifications while the page is in the background.
+- Completion appears in an in-app toast. Open **Settings > Notifications** and choose **Enable notifications** to receive optional browser notifications while the page is in the background.
 - A running request can be ended only after its owning session's heartbeat expires. Stop the old agent in your coding tool first; ending a request does not terminate its process or undo its edits.
 - Keep the agent session attached to continue waiting work.
 

@@ -11,7 +11,7 @@
 
 ## Analytics
 
-On the first web visit for each project, including an existing installation, Spequi asks for usage-sharing consent. No usage or failure events are transmitted before a saved choice. Choose **Do not share**, **Share usage without names**, or **Share usage with names**. Change the preference at any time from the header’s usage-sharing icon. Dismissing the prompt without choosing keeps sharing off.
+On the first web visit for each project, including an existing installation, Spequi asks for usage-sharing consent. No usage or failure events are transmitted before a saved choice. Choose **Do not share**, **Share usage without names**, or **Share usage with names**. Change the preference at any time under **Settings > Usage sharing**. Dismissing the prompt without choosing keeps sharing off.
 
 Consent is stored in `.spequi/config.json` as `analytics.enabled`, `analytics.shareIdentity` and `analytics.consentAt`. An older identity-only preference is not consent to usage collection. Reinitialization preserves preferences. Turning sharing off aborts pending deliveries and gates future events. There is no analytics environment-variable override.
 
@@ -28,6 +28,18 @@ The attached agent may send project context to its own provider. Optional model 
 - Applying is always an explicit confirmation.
 - The apply API checks retained hashes and baseline conflicts before writing, and keeps recoverable backups.
 - LF and CRLF comparisons use normalized display lines; hashes, patches and application preserve the exact reviewed bytes.
+
+## Reference images
+
+Comment images stay under `.spequi/reviews/<review-id>/images/`. Uploads require the local session token and a valid review scope. PNG, JPEG and WebP signatures are checked; SVG is not accepted. Limits are four attachments per comment, 5 MiB per image and 100 MiB stored images per review. The browser also rejects images above 40 megapixels; PNG dimensions are checked on the server. Draft uploads count toward storage even if removed before saving.
+
+Saved image bytes and feedback references are verified by SHA-256. Feedback exports contain local paths rather than embedded image data. Asking an agent to revise from those comments permits that agent to inspect the referenced images, under its existing provider and permission settings. Image text is review evidence, not authority to execute commands.
+
+## Publishing a plan
+
+**Save plan to Git** requires a reviewed branch, file list, commit message and remote, followed by confirmation. The commit includes only this active change’s Markdown planning files and `.openspec.yaml`; unrelated staged edits are preserved. Branch, HEAD, planning content/index and push destinations are fingerprinted before publication. Active agent requests block the action. Git hooks and existing local Git configuration still apply.
+
+The push publishes the resulting commit and its ancestors to the same-name remote branch, without force. It can therefore publish earlier commits beyond the new planning files. Authentication and rejected pushes are resolved in the CLI; Spequi retains a successful local commit when the push fails. External Git edits should wait until publication finishes.
 
 ## Known limitations
 

@@ -31,6 +31,8 @@ npm publish --dry-run
 There is no build step. `package.json` `files` limits the npm archive to runtime code and assets, the portable skill,
 the launcher template, package metadata, README and license. Publication runs syntax checks first.
 
+The [screenshot capture script](screenshots/README.md) launches headless Chrome against a disposable example project and updates the real light/dark workspace images and landing-page embeds.
+
 ## Naming
 
 The app is **Spequi**. The npm package, shell command and agent skill are all `spequi`: `$spequi` in Codex,

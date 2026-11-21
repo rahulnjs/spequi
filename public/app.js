@@ -16,17 +16,18 @@
   }
   document.addEventListener('pointerdown', event => closeDropdowns(event.target), true);
   document.addEventListener('keydown', event => { if (event.key === 'Escape') closeDropdowns(null, true); }, true);
-  function positionDropdown(panel) {
-    const trigger = dropdownTriggers(panel)[0];
-    if (!trigger) return;
-    const anchor = trigger.getBoundingClientRect(), width = Math.min(Number(panel.dataset.dropdownWidth) || 380, window.innerWidth - 24);
-    const below = window.innerHeight - anchor.bottom - 20, above = anchor.top - 20;
-    const opensBelow = below >= Math.min(220, Math.max(below, above));
-    panel.style.left = `${Math.max(12, Math.min(anchor.right - width, window.innerWidth - width - 12))}px`;
-    panel.style.top = opensBelow ? `${anchor.bottom + 8}px` : 'auto';
-    panel.style.bottom = opensBelow ? 'auto' : `${window.innerHeight - anchor.top + 8}px`;
-    panel.style.maxHeight = `${Math.max(0, Math.min(420, opensBelow ? below : above))}px`;
-  }
+  window.spequiPositionDropdown = (panel, trigger) => {
+    if (!panel || !trigger) return;
+    const anchor = trigger.getBoundingClientRect(), topbar = trigger.closest('.topbar')?.getBoundingClientRect();
+    const gutter = window.innerWidth <= 520 ? 8 : 16;
+    const width = Math.min(Number(panel.dataset.dropdownWidth) || panel.getBoundingClientRect().width || 380, window.innerWidth - gutter * 2);
+    const top = Math.max(gutter, (topbar?.bottom || anchor.bottom) + 8);
+    const right = topbar ? window.innerWidth - gutter : Math.min(anchor.right, window.innerWidth - gutter);
+    panel.style.width = `${width}px`; panel.style.left = `${Math.max(gutter, right - width)}px`;
+    panel.style.right = 'auto'; panel.style.top = `${top}px`; panel.style.bottom = 'auto';
+    panel.style.maxHeight = `${Math.max(0, Math.min(Number(panel.dataset.dropdownMaxHeight) || 640, window.innerHeight - top - gutter))}px`;
+  };
+  function positionDropdown(panel) { window.spequiPositionDropdown(panel, dropdownTriggers(panel)[0]); }
   document.addEventListener('beforetoggle', event => {
     if (!event.target.matches('[data-dropdown-panel]')) return;
     const open = event.newState === 'open';
@@ -114,7 +115,7 @@
   }, true);
   document.addEventListener('htmx:afterSwap', updateNotificationControls);
   window.addEventListener('focus', updateNotificationControls);
-  document.addEventListener('beforetoggle', event => { if (event.target.id === 'notification-settings' && event.newState === 'open') updateNotificationControls(); }, true);
+  document.addEventListener('beforetoggle', event => { if (event.target.id === 'workspace-settings' && event.newState === 'open') updateNotificationControls(); }, true);
   updateNotificationControls();
   let pendingRefresh = false, refreshing = false, followUpRefresh = false, navigationRequests = 0, navigationGeneration = 0, backgroundXHR = null;
   const drafts = {};
@@ -447,11 +448,11 @@
     const update = panel.dataset.updateAvailable === 'true', pending = panel.dataset.consentPending === 'true';
     const toggle = document.querySelector('[data-privacy-toggle]'), dot = document.querySelector('[data-privacy-dot]');
     if (dot) dot.hidden = !update && !pending;
-    const label = update ? 'Usage sharing — Spequi update available' : pending ? 'Usage sharing — choose a preference for this project' : 'Usage sharing for this project';
+    const label = update ? 'Settings — Spequi update available' : pending ? 'Settings — choose a usage preference' : 'Settings';
     toggle?.setAttribute('aria-label', label); toggle?.setAttribute('title', label);
   };
   marker();
-  if (panel.dataset.consentPending === 'true') panel.showPopover?.();
+  if (panel.dataset.consentPending === 'true') { document.getElementById('settings-sharing').open = true; document.getElementById('workspace-settings').showPopover?.(); }
   form.addEventListener('submit', async event => {
     event.preventDefault();
     if (form.hasAttribute('aria-busy')) return;
@@ -464,14 +465,15 @@
       panel.dataset.consentPending = 'false'; marker();
       feedback.textContent = saved.choice === 'off' ? 'Saved. No usage events will be sent.' : 'Saved for this project.';
       document.dispatchEvent(new CustomEvent('spequi-toast', { detail: { message: feedback.textContent } }));
-      panel.hidePopover?.();
+      document.getElementById('workspace-settings').hidePopover?.();
     } catch (error) { feedback.textContent = error.message; }
     finally { form.removeAttribute('aria-busy'); button.disabled = false; }
   });
   void fetch('/api/update-status').then(response => response.ok ? response.json() : null).then(info => {
-    if (!info?.available) return;
-    panel.dataset.updateAvailable = 'true';
-    const note = panel.querySelector('[data-update-note]');
+    if (!info) return;
+    panel.dataset.updateAvailable = String(Boolean(info.available));
+    const note = document.querySelector('[data-update-note]');
+    if (!info.available) { if (note) note.textContent = `Spequi ${info.current}${info.unavailable ? ' · Update check unavailable offline' : ' · Up to date'}`; return; }
     if (note) { note.hidden = false; note.textContent = `Update available: ${info.latest} (running ${info.current}). ${info.development ? 'Update your local checkout; published updates do not replace local source.' : 'Run /spequi update in your coding agent when idle.'}`; }
     marker();
   }).catch(() => {});

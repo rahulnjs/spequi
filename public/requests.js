@@ -60,14 +60,8 @@
     for (const toggle of document.querySelectorAll('[data-requests-toggle]')) toggle.setAttribute('aria-expanded', 'false');
   }
   function positionPanel() {
-    const drawer = panel(), anchor = document.querySelector('.topbar [data-requests-toggle]') || opener;
-    if (!drawer || drawer.hidden || !anchor?.getBoundingClientRect || !window.innerWidth) return;
-    const trigger = anchor.getBoundingClientRect(), header = anchor.closest('.topbar')?.getBoundingClientRect();
-    const gutter = window.innerWidth <= 520 ? 8 : 16, width = drawer.getBoundingClientRect().width;
-    const left = Math.max(gutter, Math.min(trigger.left, window.innerWidth - width - gutter));
-    const top = Math.max(gutter, Math.max(trigger.bottom, header?.bottom || 0) + 8);
-    drawer.style.left = `${Math.round(left)}px`; drawer.style.right = 'auto'; drawer.style.top = `${Math.round(top)}px`;
-    drawer.style.maxHeight = `${Math.max(0, Math.min(640, window.innerHeight - top - gutter))}px`;
+    const drawer = panel();
+    if (drawer && !drawer.hidden) window.spequiPositionDropdown?.(drawer, document.querySelector('.topbar [data-requests-toggle]') || opener);
   }
   function openLink(job) {
     const stage = ['preview', 'impact'].includes(job.action) ? 'implement' : ['verify', 'sync-specs', 'archive'].includes(job.action) ? 'finish' : 'shape';

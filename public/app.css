@@ -209,3 +209,19 @@
 .privacy-attention-dot[hidden]{display:none}
 .privacy-settings .privacy-update-note{margin:12px 0;padding:10px 0;border-bottom:1px solid var(--line);color:var(--text);font-size:12px;line-height:1.6}
 @media(max-width:760px){.topbar .privacy-toggle{width:36px;height:44px}.privacy-attention-dot{top:8px;right:5px}}
+
+.settings-toggle{position:relative;border:0;background:transparent;color:var(--muted)}
+.settings-panel{inset:auto;margin:0;width:360px;max-width:calc(100vw - 16px);padding:12px;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 10px 30px rgb(0 0 0 / 14%);font-size:12px;overflow:auto}
+.settings-panel>header{display:flex;align-items:center;justify-content:space-between;padding:2px 6px 10px}
+.settings-panel h2{font-size:14px;margin:0}
+.settings-panel .icon-button{border:0;background:transparent;width:28px;height:28px;padding:5px}
+.settings-link,.settings-panel .settings-theme,.settings-panel>details>summary{display:flex;align-items:center;gap:10px;padding:10px;width:100%;border:0;background:transparent;color:var(--text);font-size:12px;text-align:left;list-style:none;cursor:pointer;min-height:38px;border-radius:var(--radius)}
+.settings-panel .settings-theme{justify-content:flex-start}
+.settings-link:hover,.settings-panel .settings-theme:hover,.settings-panel>details>summary:hover{background:var(--panel)}
+.settings-panel>details>summary>svg:last-child{margin-left:auto;width:13px}
+.settings-panel>details[open]>summary>svg:last-child{transform:rotate(90deg)}
+.settings-panel .privacy-settings,.settings-panel .notification-settings{position:static;inset:auto;width:auto;max-height:none;padding:4px 10px 14px;margin:0;border:0;border-radius:0;box-shadow:none;overflow:visible;background:transparent}
+.settings-panel .notification-settings p{font-size:12px;line-height:1.65;margin:8px 0;color:var(--muted)}
+.settings-panel .privacy-settings label{padding:8px}
+.settings-panel .settings-update{border-top:1px solid var(--line);margin:8px 0 0;padding:12px 10px 2px;color:var(--muted);font-size:11px;line-height:1.7}
+@media(max-width:760px){.settings-link,.settings-panel .settings-theme,.settings-panel>details>summary{min-height:44px}}

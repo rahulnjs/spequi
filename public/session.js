@@ -3,16 +3,7 @@
   const panels = () => document.querySelectorAll('#agent-connections, #mcp-connections');
   function close() { for(const panel of panels()) panel.hidden = true; for(const button of document.querySelectorAll('[data-session-toggle]')) button.setAttribute('aria-expanded','false'); }
   function positionMCP() {
-    for (const panel of panels()) {
-      const button = document.querySelector(`[data-session-toggle][aria-controls="${panel.id}"]`);
-      if (panel.hidden || !button?.getBoundingClientRect || !window.innerWidth) continue;
-      const anchor = button.getBoundingClientRect(), header = button.closest('.topbar')?.getBoundingClientRect();
-      const gutter = window.innerWidth <= 520 ? 8 : 16, width = panel.getBoundingClientRect().width;
-      const top = Math.max(gutter, Math.max(anchor.bottom, header?.bottom || 0) + 8);
-      panel.style.left = `${Math.round(Math.max(gutter, Math.min(anchor.right - width, window.innerWidth - width - gutter)))}px`;
-      panel.style.right = 'auto'; panel.style.top = `${Math.round(top)}px`;
-      panel.style.maxHeight = `${Math.max(0, window.innerHeight - top - gutter)}px`;
-    }
+    for (const panel of panels()) if (!panel.hidden) window.spequiPositionDropdown?.(panel, document.querySelector(`[data-session-toggle][aria-controls="${panel.id}"]`));
   }
   function text(id, value) { const node = document.getElementById(id); if (node) node.textContent = value; return node; }
   function lastSeen(at) {

@@ -48,7 +48,7 @@ export function lifecycleActions({ selected, readiness, error, pending, preview,
   const deltas = readiness?.artifactPaths?.specs?.existingOutputPaths?.length || 0;
   add('sync-specs', 'Sync specifications', common || (!deltas ? 'No delta specifications are available to sync.' : ''));
   add('archive', 'Archive change', common || planning || (!complete ? 'Tracked tasks are incomplete. An archive exception requires workflow confirmation.' : ''));
-  add('archive-override', 'Request archive exception', common || (!planning && complete ? 'Use the normal archive action for completed work.' : ''));
+  add('archive-override', 'Archive change', common || planning || (!planning && complete ? 'Use the normal archive action for completed work.' : ''));
   return actions;
 }
 

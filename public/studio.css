@@ -322,10 +322,26 @@
 .workflow-step-actions [data-lifecycle-feedback]:empty{display:none}
 .workflow-step-actions [data-lifecycle-feedback]{max-width:100%;margin:0;padding:8px 10px;border-radius:var(--radius);font-size:12px;overflow-wrap:anywhere}
 .workflow-step-actions>time{font-size:11px;color:var(--muted)}
-.workflow-command{display:flex;flex-direction:column;gap:4px;margin:0 0 14px;padding:9px 12px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius)}
-.workflow-command>span{font-size:10px;color:var(--muted)}
-.workflow-command>code{font:11px/1.7 'IBM Plex Mono',monospace;overflow-wrap:anywhere;white-space:normal;color:var(--text)}
 .workflow-report{width:100%;border-block:1px solid var(--line);padding:10px 0}
 .workflow-report-missing{font-size:12px;color:var(--text);background:var(--panel);padding:12px;border-radius:var(--radius)}
 .workflow-step-actions>p{margin:0}
 .topbar .requests-toggle[data-answer-needed=true]{background:var(--accent-soft);color:var(--accent-text);border-color:var(--accent-text)}
+
+.workflow-step-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}
+.workflow-command-label{font:10px/1.6 'IBM Plex Mono',monospace;padding:2px 6px;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--muted);white-space:nowrap}
+.studio-thread:empty{flex:0;padding:0;min-height:0}
+.studio-conversation:has(.studio-thread:empty) .studio-composer{max-height:none}
+.studio-review .section-title,.studio-review .review-comment-overview,.studio-review .review-update-hint{display:none}
+.studio-review .review-feedback-actions{margin:0 0 10px}
+.studio-review .review-feedback-actions .button{min-height:30px;font-size:11px;padding:5px 10px;width:auto}
+.studio-review .inspector-section{padding:8px 16px 12px}
+
+.plan-publish{margin-top:12px;width:100%;font-size:12px}
+.plan-publish>summary{display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--accent-text);list-style:none}
+.plan-publish>summary>span{font-size:10px;color:var(--muted)}
+.plan-publish form{display:grid;gap:10px;margin-top:12px;padding:12px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius)}
+.plan-publish form>p{margin:0;color:var(--muted);font-size:11px;line-height:1.7}
+.plan-publish label{display:grid;gap:5px;font-size:11px;font-weight:600}
+.plan-publish input:not([type=hidden]),.plan-publish select{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--text);font:inherit}
+.plan-publish .button{justify-self:start}
+.plan-publish li{overflow-wrap:anywhere}

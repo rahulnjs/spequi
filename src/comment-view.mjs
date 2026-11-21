@@ -20,6 +20,7 @@ export function renderCommentComposer({ file, scope, artifact = false, document 
       <div class="comment-context-row"><p id="review-comment-context" data-inline-comment-anchor>${artifact ? 'Entire document' : 'Entire file'}</p><button type="button" class="comment-context-reset" data-comment-file data-reset-comment-context hidden>${artifact ? 'Document comment' : 'File comment'}</button></div>
       <label for="review-comment-body" class="review-body-label">Comment</label>
       <textarea id="review-comment-body" name="body" rows="3" maxlength="6000" aria-describedby="review-comment-context review-composer-feedback" required placeholder="What should change, and why?"></textarea>
+      <div class="comment-image-drafts" data-comment-images></div><div class="comment-image-toolbar"><button type="button" class="comment-image-add" data-comment-image-choose>${icon('image')}Add image</button><span>or paste from clipboard</span><input type="file" data-comment-image-input accept="image/png,image/jpeg,image/webp" multiple hidden></div>
       <div id="review-composer-feedback" data-composer-feedback></div>
       <div class="comment-composer-actions"><button type="button" class="comment-compose-close" data-close-composer title="Close editor and keep your draft">Cancel</button><button type="submit" class="button primary">Save comment</button></div>
     </form>

@@ -1,3 +1,4 @@
+import { commentImages, readReviewImage } from './review-images.mjs';
 import * as fs from 'node:fs/promises';
 import { randomUUID, createHash } from 'node:crypto';
 import { readJSON, writeJSON, within, safeID, withLock } from './files.mjs';
@@ -43,10 +44,11 @@ export async function reviewComments(root, preview) {
   return [...comments, ...await listComments(root, artifactReviewID(scope.job.change))];
 }
 
-async function addArtifactComment(root, preview, { file, body, side = 'file', start = '', end = '', sourceHash }, scope) {
+async function addArtifactComment(root, preview, { file, body, side = 'file', start = '', end = '', sourceHash, attachments }, scope) {
   const change = (await inventory(root)).changes.find(change => change.id === scope.job.change);
   if (!isCommentableArtifact(change, file)) throw new Error('Select a planning document in this active change');
-  if (typeof body !== 'string' || !body.trim() || body.length > 6000) throw new Error('Write a comment of 1–6,000 characters');
+  const images = await commentImages(root, preview, attachments);
+  if (typeof body !== 'string' || body.length > 6000 || !body.trim() && !images.length) throw new Error('Write a comment or attach an image (up to 6,000 characters)');
   if (!['file', 'document'].includes(side)) throw new Error('Invalid document comment side');
   const source = await readArtifact(root, file), hash = documentHash(source);
   if (sourceHash !== hash) throw new Error('This document changed. Reload it before commenting; your draft is still available.');
@@ -59,7 +61,7 @@ async function addArtifactComment(root, preview, { file, body, side = 'file', st
     if (snippet.length > 20000) throw new Error('Selected source is too large; comment on the entire document instead');
   }
   const sourcePath = `.spequi/reviews/${preview}/documents/${hash}.md`;
-  const record = { id: randomUUID(), kind: 'artifact', preview, change: change.id, file, side, start: first, end: last, snippet, sourceHash: hash, sourcePath, body: body.trim(), createdAt: new Date().toISOString() };
+  const record = { id: randomUUID(), kind: 'artifact', preview, change: change.id, file, side, start: first, end: last, snippet, sourceHash: hash, sourcePath, images, body: body.trim(), createdAt: new Date().toISOString() };
   await location(root, preview);
   return withLock(await location(root, preview, 'review.lock'), async () => {
     const comments = await listComments(root, preview);
@@ -76,11 +78,12 @@ async function addArtifactComment(root, preview, { file, body, side = 'file', st
 export async function addComment(root, preview, payload) {
   const scope = await reviewScope(root, preview);
   if (scope.kind === 'artifacts') return addArtifactComment(root, preview, payload, scope);
-  const { file, body, side = 'file', start = '', end = '' } = payload;
+  const { file, body, side = 'file', start = '', end = '', attachments } = payload;
   const { job, result } = scope;
   const change = result.changes.find(change => change.file === file);
   if (!change) throw new Error('Comment file is not part of this preview');
-  if (typeof body !== 'string' || !body.trim() || body.length > 6000) throw new Error('Write a comment of 1–6,000 characters');
+  const images = await commentImages(root, preview, attachments);
+  if (typeof body !== 'string' || body.length > 6000 || !body.trim() && !images.length) throw new Error('Write a comment or attach an image (up to 6,000 characters)');
   if (!['file', 'current', 'proposed'].includes(side)) throw new Error('Invalid comment side');
   let first = null, last = null, snippet = '';
   if (side !== 'file') {
@@ -92,7 +95,7 @@ export async function addComment(root, preview, payload) {
     snippet = lines.slice(first - 1, last).join('\n');
     if (snippet.length > 20000) throw new Error('Selected source is too large; comment on the entire file instead');
   }
-  const record = { id: randomUUID(), preview, change: job.change, file, side, start: first, end: last, snippet, beforeHash: change.beforeHash, afterHash: change.afterHash, body: body.trim(), createdAt: new Date().toISOString() };
+  const record = { id: randomUUID(), preview, change: job.change, file, side, start: first, end: last, snippet, beforeHash: change.beforeHash, afterHash: change.afterHash, images, body: body.trim(), createdAt: new Date().toISOString() };
   const store = await location(root, preview);
   return withLock(await location(root, preview, 'review.lock'), async () => {
     const comments = await readJSON(store, []);
@@ -121,12 +124,14 @@ export async function exportFeedback(root, preview) {
       const expected = `.spequi/reviews/${artifactReviewID(scope.job.change)}/documents/${comment.sourceHash}.md`;
       if (!/^[a-f0-9]{64}$/.test(comment.sourceHash) || comment.change !== scope.job.change || comment.sourcePath !== expected || documentHash(await fs.readFile(await within(root, expected), 'utf8')) !== comment.sourceHash) throw new Error('Retained document changed; restore it before exporting feedback');
     }
+    const images = [...new Map(comments.flatMap(comment => (comment.images || []).map(image => [image.file, { scope: comment.preview, id: image.id, hash: image.hash }]))).values()];
+    for (const image of images) if ((await readReviewImage(root, image.scope, image.id)).hash !== image.hash) throw new Error('An attached image changed; review it before exporting');
     const id = randomUUID(), exportedAt = new Date().toISOString();
     const relative = `.spequi/reviews/${preview}/feedback-${id}.md`;
     const planning = await planningEvidence(root, scope.job.change);
     const document = feedbackMarkdown({ ...scope, planning, exportId: id, exportFile: relative }, comments, exportedAt);
     await fs.writeFile(await within(root, relative), document, { flag: 'wx', mode: 0o600 });
-    const record = { id, preview, change: scope.job.change, file: relative, exportedAt, count: comments.length, hash: createHash('sha256').update(document).digest('hex') };
+    const record = { id, preview, change: scope.job.change, file: relative, exportedAt, count: comments.length, images, hash: createHash('sha256').update(document).digest('hex') };
     await writeJSON(await location(root, preview, `export-${id}.json`), record);
     return record;
   });
@@ -139,6 +144,7 @@ export async function feedbackExport(root, preview, id) {
   const file = `.spequi/reviews/${preview}/feedback-${id}.md`;
   const document = await fs.readFile(await within(root, file), 'utf8');
   if (record.hash !== createHash('sha256').update(document).digest('hex')) throw new Error('Feedback document changed after export; create a new export');
+  for (const image of record.images || []) if ((await readReviewImage(root, image.scope, image.id)).hash !== image.hash) throw new Error('An exported image changed; create a new feedback snapshot');
   return { ...record, file, document };
 }
 
