@@ -13,7 +13,7 @@ import { exists, readJSON, writeJSON, runtime, isPreviewSnapshotPath, acquireLoc
 import { inventory, readArtifact, escape, jobMatchesChange } from './specs.mjs';
 import { listJobs, enqueue, updateJob, agentStatus, getJob, pendingStatuses, createJobReader, claimNext, heartbeat, stopPolling, queueStatus } from './jobs.mjs';
 import { applyPreview, previewResult } from './previews.mjs';
-import { workspace, shell } from './views.mjs';
+import { workspace, shell, icon } from './views.mjs';
 import { addComment, deleteComment, exportFeedback, reviewScope } from './review-store.mjs';
 import { analyzeChange } from './spec-impact.mjs';
 import { directPreview } from './direct-preview.mjs';
@@ -142,7 +142,7 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
           const relevant = jobs.filter(job => !job.hiddenAt && (selected && jobMatchesChange(job, selected) || job.id === url.searchParams.get('creation')));
           const draftStates = await Promise.all(drafts.map(async draft => ({ id: draft.id, change: draft.change, creationId: draft.creationId, status: jobs.find(job => job.id === draft.creationId)?.status, hasPlan: Boolean(draft.creationId && /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(draft.change) && await exists(path.join(root, 'openspec', 'changes', draft.change))) })));
           const inbox = requestPage(jobs, {}, { agent, dismissed: await inboxState(root) });
-          return send(response, 200, JSON.stringify({ notifications: jobs.filter(job => !job.hiddenAt).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 100).map(({ id, action, change, status, updatedAt }) => ({ id, action, change, status, updatedAt })), agent, attention: inbox.attention, inboxCount: inbox.total, revision: JSON.stringify(relevant.map(job => [job.id, job.status])), thread: conversation(relevant, agent), drafts: draftStates, active: jobs.filter(job => pendingStatuses.includes(job.status)).map(job => ({ id: job.id, change: job.change, status: job.status })) }), 'application/json');
+          return send(response, 200, JSON.stringify({ notifications: jobs.filter(job => !job.hiddenAt).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 100).map(({ id, action, change, status, updatedAt }) => ({ id, action, change, status, updatedAt })), agent, attention: inbox.attention, inboxCount: inbox.total, revision: JSON.stringify(relevant.map(job => [job.id, job.status])), thread: conversation(relevant, agent, icon), drafts: draftStates, active: jobs.filter(job => pendingStatuses.includes(job.status)).map(job => ({ id: job.id, change: job.change, status: job.status })) }), 'application/json');
         }
         const imageMatch = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/(?:images|attachments)\/([a-f0-9-]{36}\.[a-z0-9]{1,12})$/);
         if (imageMatch) {

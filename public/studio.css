@@ -89,6 +89,10 @@
 .studio[data-awaiting-input=true] .studio-footer{min-height:0;padding-block:8px}
 .studio-thread{flex:1 1 0;min-height:0;overflow:auto;overscroll-behavior:contain;padding:18px;overflow-wrap:anywhere;scroll-padding-block:18px}
 .studio-conversation-empty{font-size:13px;line-height:1.8;color:var(--muted)}
+.studio-thread-placeholder{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;color:var(--muted)}
+.studio-thread-placeholder>svg{width:28px;height:28px;margin-bottom:12px}
+.studio-thread-placeholder>strong{font-size:13px;font-weight:500}
+.studio-thread-placeholder>p{max-width:30ch;margin:6px 0 0;font-size:12px;line-height:1.7}
 .studio-exchange+.studio-exchange{margin-top:24px}.studio-message{font-size:13px;line-height:1.7}.studio-message p{margin:6px 0 10px}
 .studio-user{background:var(--panel);padding:10px 12px;border-radius:7px;margin-bottom:14px}
 .studio-message>strong,.studio-message-heading>strong{font-size:12px;font-weight:600}
@@ -329,8 +333,7 @@
 
 .workflow-step-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}
 .workflow-command-label{font:10px/1.6 'IBM Plex Mono',monospace;padding:2px 6px;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--muted);white-space:nowrap}
-.studio-thread:empty{flex:0;padding:0;min-height:0}
-.studio-conversation:has(.studio-thread:empty) .studio-composer{max-height:none}
+.studio-thread:empty{padding:0}
 .studio-review .section-title,.studio-review .review-comment-overview,.studio-review .review-update-hint{display:none}
 .studio-review .review-feedback-actions{margin:0 0 10px}
 .studio-review .review-feedback-actions .button{min-height:30px;font-size:11px;padding:5px 10px;width:auto}
