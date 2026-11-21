@@ -21,7 +21,8 @@ Existing changes open in document review from the left panel. Continue a draft o
 
 ### Planning artifacts
 
-- Select a planning artifact tab and use **Revise spec** to request an update, or **Ask a question** for a read-only exploration.
+- Select a planning artifact tab and use **Revise spec** to request an update, or **Ask a question** for a read-only exploration. Inline passage comments and **Update spec** are available during planning, before Finish planning. All planning Markdown artifacts can retain exact reviewed snapshots.
+- Commands in revision requests are proposed document content. Asking to use a different command changes the planned command; it does not execute it or implement code.
 - Changes appear as highlighted sections with a document summary. Highlights begin with revisions to existing text.
 - Artifacts with several documents use a dropdown showing each file's relative path and a description from its content.
 - **Planning actions** offers the next artifact or the full plan.
@@ -42,7 +43,7 @@ Optional local file analysis and configured model proposals are available under 
 
 ### Workflow
 
-Open **Workflow** for the numbered steps: prepare the plan; generate, review and apply; optionally validate specs and verify implementation; sync specs; archive. Each step explains what it does and shows its current state. Validation and verification run only when explicitly requested. Archive confirmations appear in the conversation.
+Open **Workflow** for the numbered steps: prepare the plan; generate, review and apply; optionally validate specs and verify implementation; sync specs; archive. Each step explains what it does, shows its current state, and identifies its actual OpenSpec command or agent skill. The separate Commands dropdown has been removed. Validation and verification run only when explicitly requested. Archive confirmations appear in the conversation.
 
 Status, task readiness and strict validation use the installed `openspec` CLI locally, with no agent required.
 Missing or incompatible CLI capabilities disable those actions with an explanation. Checked task boxes alone do not
@@ -50,9 +51,7 @@ prove the implementation is correct.
 
 ## Commands
 
-The **Commands** picker shows the next executable command and previously completed commands. While a request is pending, it shows the request status and a link to the conversation. Dropdowns close when clicking outside or pressing Escape.
-
-The picker and typed slash commands use the same guarded operations. Supported commands are:
+Workflow is the primary action guide. The conversation composer still accepts these guarded app commands:
 
 | Command | Purpose |
 | --- | --- |
@@ -75,6 +74,7 @@ The picker and typed slash commands use the same guarded operations. Supported c
 Reasoning and writing requests use the current session running the viewer skill. The agent asks questions with
 `agent ask` and waits for the app's reply with `agent input --wait 300`. The job resumes with the same ownership token.
 
+- A distinct **answer needed** marker in the header separates unanswered questions from ordinary ongoing requests. Open it to see the question in the inbox.
 - Pending questions and reply controls appear directly in the Agent panel and Requests inbox. Replies survive live list refreshes.
 - Queued and awaiting-input requests can be cancelled. Cancelling an old waiting request frees the queue and keeps existing files. If its owner is disconnected, you can save an answer and resume the same coding session.
 - Longer requests can take a few minutes. Results appear in the workspace when ready. Check your CLI for permissions or other actions waiting for you.
@@ -88,7 +88,7 @@ An optional branch name on a new spec applies before the first agent request, in
 
 ## Diff generation scope
 
-**Generate file diff** only makes the file changes required by the selected specs in an isolated copy. It does not run validation, builds, linters, type checks or tests. Test files change only when the specs require them. The generating agent records exact spec links as it edits and returns a short change summary in the same request. The review shows how many changed lines have recorded links; suggested context stays separately labelled.
+**Generate file diff** only makes the file changes required by the selected specs in an isolated copy. It does not run validation, builds, linters, type checks or tests. Test files change only when the specs require them. The generating agent records exact spec links as it edits. Quotes start collapsed and can be toggled individually. The full-width summary and link-coverage bars have been removed; suggested context stays separately labelled.
 
 ## Native tool and file permissions
 
@@ -99,3 +99,11 @@ Questions sent through Spequi’s agent protocol can be answered in the Agent pa
 Planning versions are kept under `.spequi/studio/`. A revision stores the exact Markdown before a request and after it completes.
 The most recent 40 versions are retained, with at most 8 MiB of planning documents per version.
 This is local review evidence; the files under `openspec/` remain the source of truth.
+
+## Verification reports
+
+Verification is read-only and does not run tests or builds. The agent writes a Markdown report to `.spequi/verification/<job-id>.md` with inspected requirements/files, conclusions, findings with evidence and limitations. Completion ingests the report; a heading or generic “Completed” message is rejected. Earlier title-only results show **Report missing** and offer a rerun rather than a successful verification badge.
+
+## Runtime updates
+
+Run `/spequi update` in the host coding agent to refresh Spequi itself. This is different from the browser composer's `/update`, which revises planning documents. Startup checks show a version notice only; no automatic update occurs. Resolve active requests before updating, stop the project server, update, reload the skill from disk and restart/reattach. Queued work and project state are retained.

@@ -115,3 +115,9 @@ your-project/
 - If the cached package disappears, the launcher can retrieve the initialized version through npm (registry access required).
 
 Spequi starts fresh in `.spequi/`. It does not import, move or delete data from earlier tools.
+
+## Usage sharing and updates
+
+The first web visit asks for per-project usage consent, including existing projects. Until a choice is saved, no usage/failure events are sent. Choose no sharing, usage without names, or usage including the project folder and Git user name. The header’s usage-sharing control lets you change this later; initialization no longer asks a terminal-only identity question.
+
+Startup checks for a newer version using the project's configured npm registry. A red dot on the usage-sharing icon points to plain update text in its panel. Offline checks do not stop the server, and a notice never installs an update automatically. Run `/spequi update` in your host agent when no request is active. The skill stops its project server, updates managed launchers/skills, reads the refreshed skill, and starts/reattaches. For a legacy runtime without the update command, use `npx spequi@latest init` after retaining any customized managed files. Local source checkouts are refreshed with `node bin/spequi.mjs init`; published updates do not overwrite them.

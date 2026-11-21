@@ -244,8 +244,8 @@
     if (generation !== refreshGeneration || document.getElementById('workspace') !== workspace || workspace.dataset.refreshUrl !== url) return;
     const updated = html.getElementById('review-comments');
     if (!updated) throw new Error(`${outcome}. Reload this view to refresh the comment list.`);
-    const inspector = document.getElementById('review-details'), top = inspector.scrollTop;
-    const reader = document.querySelector('.reader'), readerTop = reader.scrollTop, readerLeft = reader.scrollLeft;
+    const inspector = document.getElementById('review-details') || document.querySelector('.studio-review'), top = inspector?.scrollTop || 0;
+    const reader = document.getElementById('studio-canvas-body') || document.querySelector('.reader'), readerTop = reader.scrollTop, readerLeft = reader.scrollLeft;
     const code = document.querySelector('.diff-code-scroll'), codeTop = code?.scrollTop, codeLeft = code?.scrollLeft;
     const active = current?.contains(document.activeElement) ? { name: document.activeElement.name, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
     const disclosures = [...document.querySelectorAll('#workspace details[id]')].filter(node => node.id !== 'review-comment-composer').map(node => ({ id: node.id, open: node.hasAttribute('open') }));
@@ -266,7 +266,7 @@
     if (window.htmx && document.querySelector('.file-diff')) window.htmx.process(document.querySelector('.file-diff'));
     document.dispatchEvent(new CustomEvent('htmx:afterSwap', { detail: { target: imported } }));
     if (active) { const input = form()?.querySelector(`[name="${active.name}"]`); input?.focus({ preventScroll: true }); if (typeof input?.setSelectionRange === 'function' && Number.isInteger(active.start)) input.setSelectionRange(active.start, active.end); }
-    inspector.scrollTop = top;
+    if (inspector) inspector.scrollTop = top;
     reader.scrollTop = readerTop; reader.scrollLeft = readerLeft;
     const updatedCode = document.querySelector('.diff-code-scroll');
     if (updatedCode && code) { updatedCode.scrollTop = codeTop; updatedCode.scrollLeft = codeLeft; }

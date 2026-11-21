@@ -221,12 +221,16 @@
     activityPending = (async () => {
       const result = await api('/api/activity?' + new URLSearchParams({ change: current.dataset.change || '', creation: query.searchParams.get('creation') || '' }));
       notifyTransitions(result.notifications);
+      if (agent.observedAt && result.agent.observedAt && result.agent.observedAt < agent.observedAt) { activityAgain = true; return; }
       agent = result.agent; document.dispatchEvent(new window.CustomEvent('agent-status', { detail: agent }));
       const attention = result.attention || 0, inboxCount = result.inboxCount ?? attention;
+      const answers = result.active.filter(job => job.status === 'awaiting-input').length;
+      for (const marker of document.querySelectorAll('[data-request-answer]')) { marker.hidden = !answers; marker.textContent = `${answers} ${answers === 1 ? 'answer needed' : 'answers needed'}`; }
       const markerLabel = inboxCount ? `${inboxCount} ${inboxCount === 1 ? 'item' : 'items'} in your inbox${attention ? `; ${attention} ${attention === 1 ? 'needs' : 'need'} your attention` : ''}` : 'No pending requests';
-      for (const count of document.querySelectorAll('[data-request-count]')) { count.textContent = inboxCount; count.hidden = !inboxCount; count.title = markerLabel; }
+      for (const count of document.querySelectorAll('[data-request-count]')) { count.textContent = inboxCount; count.hidden = !inboxCount || Boolean(answers); count.title = markerLabel; }
       for (const toggle of document.querySelectorAll('.topbar [data-requests-toggle]')) {
-        toggle.title = markerLabel; toggle.setAttribute('aria-label', `Requests. ${markerLabel}`);
+        toggle.dataset.answerNeeded = String(Boolean(answers));
+        toggle.title = answers ? `${answers} unanswered ${answers === 1 ? 'question' : 'questions'} — open Requests to reply` : markerLabel; toggle.setAttribute('aria-label', `Requests. ${answers ? `${answers} answers needed.` : markerLabel}`);
       }
       renderDrafts(result.drafts);
       for (const status of document.querySelectorAll('[data-job-state]')) status.textContent = labels[result.active.find(job => job.change === status.dataset.jobState)?.status] || '';
@@ -304,7 +308,7 @@
       await api(`/api/jobs/${encodeURIComponent(id)}/${action}`, payload);
       if (action === 'retry' || action === 'dismiss') { feedback(''); document.dispatchEvent(new window.CustomEvent('spequi-toast', { detail: { message: action === 'dismiss' ? 'Dismissed from inbox. History kept.' : 'Retry queued.' } })); }
       else feedback(action === 'delete' ? 'Request removed.' : 'Request cancelled.');
-      await Promise.all([activity(), loadRequests()]);
+      await Promise.all([activity(), loadRequests(), window.spequiRefreshAgent?.()]);
     }
     catch (error) { feedback(error.message, true); }
     finally { control.disabled = false; }
@@ -313,7 +317,7 @@
     const toggle = event.target.closest('[data-requests-toggle]');
     if (toggle) {
       const visible = panel().hidden; close(); panel().hidden = !visible;
-      if (visible) { opener = toggle; toggle.setAttribute('aria-expanded', 'true'); positionPanel(); panel().querySelector('[data-requests-close]').focus(); void loadRequests(); }
+      if (visible) { if (toggle.dataset.answerNeeded === 'true') { panel().querySelector('[data-request-filter]').value = 'inbox'; page = 1; } opener = toggle; toggle.setAttribute('aria-expanded', 'true'); positionPanel(); panel().querySelector('[data-requests-close]').focus(); void loadRequests(); }
       return;
     }
     if (event.target.closest('[data-requests-close]')) { close(); opener?.focus(); return; }
@@ -348,6 +352,7 @@
   document.addEventListener('requests-updated', () => { void activity(); void loadRequests(); });
   document.addEventListener('agent-status', event => {
     const next = event.detail;
+    if (agent.observedAt && next.observedAt && next.observedAt < agent.observedAt) return;
     const changed = agent.status !== next.status || agent.queue?.active?.id !== next.queue?.active?.id || agent.queue?.active?.ownerConnected !== next.queue?.active?.ownerConnected;
     agent = next;
     if (changed) { void activity(); void loadRequests(); }

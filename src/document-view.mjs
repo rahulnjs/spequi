@@ -1,4 +1,5 @@
 import { renderSavedComment } from './comment-controls.mjs';
+import { diffLines } from 'diff';
 import { marked } from 'marked';
 import { escape as e, sanitizeMarkdownHTML } from './specs.mjs';
 import { artifactReviewID } from './review-store.mjs';
@@ -16,7 +17,7 @@ export function renderDocumentDiscussion({ artifact, change, comments }, { icon 
 
 // Positions come from raw lexer spans, never from rendered line wrapping.
 // Reference definitions remain shared when parsing individual blocks.
-export function renderReviewMarkdown(source, { sourceHash, comments = [], icon }) {
+export function renderReviewMarkdown(source, { sourceHash, comments = [], icon, previous }) {
   const normalized = source.replace(/\r\n/g, '\n');
   const tokens = marked.lexer(normalized);
   const starts = [0];
@@ -27,6 +28,12 @@ export function renderReviewMarkdown(source, { sourceHash, comments = [], icon }
     return low;
   };
   const parse = token => { const list = [token]; list.links = tokens.links; return sanitizeMarkdownHTML(marked.parser(list)); };
+  const changed = []; let line = 1;
+  if (typeof previous === 'string' && previous.trim() && previous !== source) for (const part of diffLines(previous.replace(/\r\n/g, '\n'), normalized)) {
+    if (part.removed) continue;
+    if (part.added) changed.push([line, line + part.count - 1]);
+    line += part.count;
+  }
   const assigned = new Set();
   const thread = (start, end) => {
     const notes = comments.filter(comment => comment.side === 'document' && comment.sourceHash === sourceHash && comment.end >= start && comment.end <= end && !assigned.has(comment.id));
@@ -34,7 +41,7 @@ export function renderReviewMarkdown(source, { sourceHash, comments = [], icon }
     return `<div class="document-inline-thread" data-document-thread="${start}">${notes.map(comment => commentCard(comment, sourceHash, icon, true)).join('')}</div>`;
   };
   const button = (start, end) => `<button type="button" class="markdown-comment-gutter ${comments.some(comment => comment.side === 'document' && comment.sourceHash === sourceHash && comment.start <= end && comment.end >= start) ? 'has-comments' : ''}" data-review-line="${start}" data-review-end="${end}" data-review-side="document" aria-label="Comment on Markdown ${start === end ? `line ${start}` : `lines ${start}–${end}`}" title="Add a comment · ${start === end ? `line ${start}` : `lines ${start}–${end}`}" aria-expanded="false">${icon('plus')}</button>`;
-  const block = (html, start, end) => `<div class="markdown-review-block" id="document-lines-${start}-${end}" data-document-block data-source-start="${start}" data-source-end="${end}">${button(start, end)}<div class="markdown-block-content">${html}</div>${thread(start, end)}</div>`;
+  const block = (html, start, end) => `<div class="markdown-review-block${changed.some(([a, b]) => a <= end && b >= start) ? ' studio-revision-mark' : ''}" id="document-lines-${start}-${end}" tabindex="-1" data-document-block data-source-start="${start}" data-source-end="${end}">${button(start, end)}<div class="markdown-block-content">${html}</div>${thread(start, end)}</div>`;
   let cursor = 0;
   return tokens.map(token => {
     const offset = normalized.indexOf(token.raw, cursor);

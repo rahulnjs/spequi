@@ -438,3 +438,41 @@
   else window.addEventListener('load', loadHTMX, { once: true });
   connect();
 })();
+
+(() => {
+  const panel = document.getElementById('privacy-settings');
+  if (!panel) return;
+  const form = panel.querySelector('[data-consent-form]');
+  const marker = () => {
+    const update = panel.dataset.updateAvailable === 'true', pending = panel.dataset.consentPending === 'true';
+    const toggle = document.querySelector('[data-privacy-toggle]'), dot = document.querySelector('[data-privacy-dot]');
+    if (dot) dot.hidden = !update && !pending;
+    const label = update ? 'Usage sharing — Spequi update available' : pending ? 'Usage sharing — choose a preference for this project' : 'Usage sharing for this project';
+    toggle?.setAttribute('aria-label', label); toggle?.setAttribute('title', label);
+  };
+  marker();
+  if (panel.dataset.consentPending === 'true') panel.showPopover?.();
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (form.hasAttribute('aria-busy')) return;
+    const feedback = form.querySelector('[data-consent-feedback]'), button = form.querySelector('[type=submit]');
+    form.setAttribute('aria-busy', 'true'); button.disabled = true; feedback.textContent = '';
+    try {
+      const response = await fetch('/api/privacy', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content }, body: JSON.stringify({ choice: new FormData(form).get('choice') }) });
+      if (!response.ok) throw new Error('Could not save your preference. Reload the viewer and retry.');
+      const saved = await response.json();
+      panel.dataset.consentPending = 'false'; marker();
+      feedback.textContent = saved.choice === 'off' ? 'Saved. No usage events will be sent.' : 'Saved for this project.';
+      document.dispatchEvent(new CustomEvent('spequi-toast', { detail: { message: feedback.textContent } }));
+      panel.hidePopover?.();
+    } catch (error) { feedback.textContent = error.message; }
+    finally { form.removeAttribute('aria-busy'); button.disabled = false; }
+  });
+  void fetch('/api/update-status').then(response => response.ok ? response.json() : null).then(info => {
+    if (!info?.available) return;
+    panel.dataset.updateAvailable = 'true';
+    const note = panel.querySelector('[data-update-note]');
+    if (note) { note.hidden = false; note.textContent = `Update available: ${info.latest} (running ${info.current}). ${info.development ? 'Update your local checkout; published updates do not replace local source.' : 'Run /spequi update in your coding agent when idle.'}`; }
+    marker();
+  }).catch(() => {});
+})();

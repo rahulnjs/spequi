@@ -24,6 +24,7 @@
     return new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
   function render(agent) {
+    if (current?.observedAt && agent.observedAt && agent.observedAt < current.observedAt) return;
     if (current && (current.status !== agent.status || current.connected !== agent.connected || current.agent !== agent.agent)) {
       const result = document.querySelector('[data-session-check-result]'); if (result) result.textContent = '';
     }
@@ -154,6 +155,7 @@
     }
   }
   document.addEventListener('agent-status',event => render(event.detail));
+  document.addEventListener('requests-updated', () => { void refresh(); });
   document.addEventListener('click',event => {
     const toggle = event.target.closest('[data-session-toggle]');
     const target = toggle && document.getElementById(toggle.getAttribute('aria-controls'));

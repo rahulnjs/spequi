@@ -33,7 +33,7 @@ export function renderComments({ comments, job, file, selected, jobs, base, file
   const commentEndpoint = `/api/reviews/${commentScope}`;
   const sourceLink = comment => {
     const stale = comment.kind === 'artifact' && fileHashes[comment.file] !== comment.sourceHash;
-    const params = comment.kind === 'artifact' ? { change: selected.id, doc: comment.file, view: 'rendered', comment: comment.id, line: !stale ? comment.start : undefined, side: !stale ? comment.side : undefined } : { ...base, file: comment.file, comment: comment.id, context: comment.side === 'file' ? '' : 'all', line: comment.start, side: comment.side };
+    const params = comment.kind === 'artifact' ? { change: selected.id, ...(base.view === 'studio' ? { view: 'studio', stage: 'shape', plan: comment.file.split('/').slice(3).join('/') } : { doc: comment.file, view: 'rendered' }), comment: comment.id, line: !stale ? comment.start : undefined, side: !stale ? comment.side : undefined } : { ...base, file: comment.file, comment: comment.id, context: comment.side === 'file' ? '' : 'all', line: comment.start, side: comment.side };
     const openLabel = comment.side === 'file' ? comment.kind === 'artifact' ? 'Open document' : 'Open file' : locationLabel(comment);
     return link(`${e(openLabel)} ${icon('arrow')}`, params, `comment-source-link ${comment.side}`, `title="Open ${e(comment.file)} · ${e(locationLabel(comment))}"`) + (stale ? '<span class="comment-stale" title="The document changed since this comment. Source context and exported feedback retain the reviewed version.">Earlier version</span>' : '');
   };

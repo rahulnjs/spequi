@@ -7,7 +7,7 @@ import { feedbackMarkdown, planningEvidence } from './feedback.mjs';
 export { feedbackMarkdown } from './feedback.mjs';
 export const artifactReviewID = change => `change-${createHash('sha256').update(change).digest('hex')}`;
 export const documentHash = source => createHash('sha256').update(source).digest('hex');
-export const isCommentableArtifact = (change, file) => Boolean(change && !change.archived && change.files.includes(file) && /\/(proposal|design)\.md$/.test(file) && !file.includes('/specs/'));
+export const isCommentableArtifact = (change, file) => Boolean(change && !change.archived && change.files.includes(file) && file.endsWith('.md'));
 
 export async function reviewScope(root, preview) {
   safeID(preview);
@@ -45,7 +45,7 @@ export async function reviewComments(root, preview) {
 
 async function addArtifactComment(root, preview, { file, body, side = 'file', start = '', end = '', sourceHash }, scope) {
   const change = (await inventory(root)).changes.find(change => change.id === scope.job.change);
-  if (!isCommentableArtifact(change, file)) throw new Error('Select Proposal or Design in this active change');
+  if (!isCommentableArtifact(change, file)) throw new Error('Select a planning document in this active change');
   if (typeof body !== 'string' || !body.trim() || body.length > 6000) throw new Error('Write a comment of 1–6,000 characters');
   if (!['file', 'document'].includes(side)) throw new Error('Invalid document comment side');
   const source = await readArtifact(root, file), hash = documentHash(source);

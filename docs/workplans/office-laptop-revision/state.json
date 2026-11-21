@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "status": "implemented_awaiting_user_verification",
+  "project": "/Users/krypton/openspec-ui",
+  "baseline_head": "d2f4a88247eab85a6d967ea0bca844b73cd5e9b0",
+  "baseline_package_version": "0.1.8",
+  "implementation_started": true,
+  "implementation_authorized": true,
+  "verification_policy": "Brief sanity checks only. No automated tests or exhaustive browser QA unless explicitly requested.",
+  "preexisting_changes": [
+    ".gitignore"
+  ],
+  "completed_phases": [
+    "P0",
+    "P1",
+    "P2",
+    "P3",
+    "P4",
+    "P5",
+    "P6",
+    "P7",
+    "P7a",
+    "P8",
+    "P9"
+  ],
+  "current_phase": "complete",
+  "questions": {
+    "Q1_summary_and_context_placement": {
+      "answer": "Remove change summary completely. Keep spec context collapsed by default with a user toggle.",
+      "recommended": "Right-panel details with compact collapsed spec reference"
+    },
+    "Q2_commands_dropdown": {
+      "answer": "Remove Commands dropdown. Show actual OpenSpec command or agent skill per Workflow step.",
+      "recommended": "Workflow replaces dropdown"
+    },
+    "Q3_usage_consent": {
+      "answer": "No transmission until per-project consent, including existing projects. Offer anonymous usage, optional identity sharing, or full opt-out; editable later.",
+      "recommended": "Consent before transmission; include existing projects; editable settings"
+    },
+    "Q4_update_policy": {
+      "answer": "Check on start and show notice. Update explicitly via /spequi update. No automatic update.",
+      "recommended": "Startup version check and notice; explicit update"
+    },
+    "Q5_native_approval_hooks": {
+      "answer": "Defer native approval hooks and indicators for now. Full tool activity feed also deferred.",
+      "recommended": "Defer hooks; improve questions and CLI guidance"
+    },
+    "Q6_start_implementation": {
+      "answer": "Wait for a separate implementation instruction.",
+      "recommended": null
+    }
+  },
+  "deferred": [
+    "Full tool activity feed",
+    "Native CLI approval hooks and indicators",
+    "Browser control of native host approvals",
+    "Direct MCP endpoint probing",
+    "Automatic package updates"
+  ],
+  "next_action": "User reloads the page to load the updated global header and local session token; Spequi attachment resumes polling.",
+  "observation_batches_received": 2,
+  "additional_observations": [
+    {
+      "id": 16,
+      "issue": "Windows archive fails while Spequi runs; succeeds after stopping server",
+      "phase": "P7a",
+      "status": "implemented_awaiting_user_verification",
+      "root_cause": "Unverified; possible watcher or held handle"
+    },
+    {
+      "id": 17,
+      "issue": "Remove change-style hero and Files changed action from main specification reading",
+      "phase": "P5",
+      "status": "implemented_awaiting_user_verification"
+    },
+    {
+      "id": 18,
+      "issue": "Main specifications incorrectly show Planning and change metadata",
+      "phase": "P5",
+      "status": "implemented_awaiting_user_verification"
+    },
+    {
+      "id": 19,
+      "issue": "Repeated title-only verification report marked Complete",
+      "phase": "P2/P5",
+      "status": "implemented_awaiting_user_verification",
+      "duplicate_of": 8
+    }
+  ],
+  "implementation_phase_order": [
+    "P2",
+    "P3",
+    "P4",
+    "P5",
+    "P6",
+    "P7",
+    "P7a",
+    "P8",
+    "P9"
+  ],
+  "limitations": [
+    "No automated tests or browser QA run, per user preference.",
+    "Windows archive locking uses polling watchers; Windows runtime verification remains for the user.",
+    "Published update download/restart not executed against the local development checkout."
+  ],
+  "progress_format": "Only job-name [done] updates; no implementation narration.",
+  "checks": [
+    "Syntax checks passed for all 19 modified/new JavaScript files, with focused rechecks after later edits.",
+    "Server module imports resolve without starting a server.",
+    "git diff --check passed.",
+    "Focused design scan: advisory findings only; no blocking findings.",
+    "Graphify refreshed: 708 nodes, 2266 relationships; HTML/report/cache/manifest saved."
+  ],
+  "changed_files": [
+    "CHANGELOG.md",
+    "README.md",
+    "bin/spequi.mjs",
+    "docs/agent-workflow.md",
+    "docs/getting-started.md",
+    "docs/planning.md",
+    "docs/review.md",
+    "docs/security.md",
+    "public/app.css",
+    "public/app.js",
+    "public/diff.css",
+    "public/index.html",
+    "public/requests.js",
+    "public/review.js",
+    "public/studio.css",
+    "skills/spequi/SKILL.md",
+    "src/analytics.mjs",
+    "src/commands.mjs",
+    "src/comment-view.mjs",
+    "src/document-view.mjs",
+    "src/feedback.mjs",
+    "src/jobs.mjs",
+    "src/preview-view.mjs",
+    "src/review-store.mjs",
+    "src/review-view.mjs",
+    "src/server.mjs",
+    "src/spec-context-view.mjs",
+    "src/studio-view.mjs",
+    "src/views.mjs",
+    "src/verification.mjs",
+    "src/updates.mjs"
+  ],
+  "follow_up_header_queue": "Implemented: borderless usage icon/red dot/plain update text; no duplicate controls; fresh ordered agent status after cancel/delete."
+}

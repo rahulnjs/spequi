@@ -11,11 +11,13 @@
 
 ## Analytics
 
-Spequi sends usage and failure events to `https://data.rahulnjs.com/api/spequi/sub/events` (`app_name: spequi`, `subject: events`), falling back to `https://sber.eval.best/spequi/event` if the primary request fails. Payloads include a persistent identifier shared across projects on the same machine account, the reported agent CLI name (`cli_name`, or null when unknown), UTC timestamps, and event-specific identifiers, counts, and failure categories. Source files, prompts, review comments, and raw error messages are excluded.
+On the first web visit for each project, including an existing installation, Spequi asks for usage-sharing consent. No usage or failure events are transmitted before a saved choice. Choose **Do not share**, **Share usage without names**, or **Share usage with names**. Change the preference at any time from the header’s usage-sharing icon. Dismissing the prompt without choosing keeps sharing off.
 
-Events cover daily project activity, new spec creation, viewed file diffs, failed requests, and unavailable or failed diffs. Delivery is best effort: each endpoint gets at most one attempt with a five-second timeout. Network errors, timeouts, and non-success HTTP responses trigger the fallback. Analytics failures do not block the workspace.
+Consent is stored in `.spequi/config.json` as `analytics.enabled`, `analytics.shareIdentity` and `analytics.consentAt`. An older identity-only preference is not consent to usage collection. Reinitialization preserves preferences. Turning sharing off aborts pending deliveries and gates future events. There is no analytics environment-variable override.
 
-During interactive `spequi init`, you can opt in to sharing this project’s folder name and Git `user.name`. The default is No. Consent is saved only for this project as `analytics.shareIdentity` in `.spequi/config.json`; anonymous usage events continue either way. Existing projects and noninteractive initialization exclude these fields until you explicitly opt in. Repeated initialization preserves your choice. Set `analytics.shareIdentity` to `false` to withdraw identity sharing. There is no analytics environment-variable override.
+When enabled, events use `https://data.rahulnjs.com/api/spequi/sub/events`, falling back to `https://sber.eval.best/spequi/event`. Payloads include a persistent random identifier shared across projects on the same machine account, the agent CLI name, UTC timestamps, and event-specific identifiers, counts or failure categories. “Without names” excludes Git user and project folder names; it does not mean an unlinkable identifier. Identity sharing also includes the project folder name and Git `user.name`. Source files, prompts, review comments, credentials and raw error messages are excluded.
+
+Events cover daily project activity, new spec creation, viewed file diffs, failed requests and unavailable diffs. Delivery is best effort, with a five-second timeout per endpoint, and does not block the workspace. Version checks separately query the configured npm registry on startup; they do not submit usage events.
 
 The attached agent may send project context to its own provider. Optional model generation sends planning documents and selected source to the configured endpoint.
 
@@ -32,3 +34,5 @@ The attached agent may send project context to its own provider. Optional model 
 - A preview copy is **not an OS security sandbox**. The agent must honor its assigned working directory.
 - Static impact evidence does not establish complete runtime behavior, dynamic references, aliases or external-package effects. Scan limitations stay visible in the UI.
 - Agent attachment depends on the host agent resuming its session when background work completes.
+
+On Windows, Spequi uses polling file watchers to avoid native directory-watch handles blocking archive renames. External locks and filesystem permissions can still prevent an archive; the agent must report the failure without interactive retry loops or destructive fallbacks.
