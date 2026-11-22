@@ -1,6 +1,6 @@
 # Offline tools and model preview
 
-These tools live under **Files > Explore affected files** and need no attached agent.
+These tools live under **Files > Affected files** and need no attached agent. Open the compact disclosure and choose **Scan files**; use **Scan again** when an analysis already exists.
 
 ## Analyze affected files
 

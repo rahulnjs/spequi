@@ -5,7 +5,7 @@ import { localReadiness, openspecJSON } from './openspec-cli.mjs';
 import { listJobs, enqueue, pendingStatuses } from './jobs.mjs';
 import { previewResult } from './previews.mjs';
 import { runtime, readJSON, writeJSON, within, withLock } from './files.mjs';
-import { submitDraft, finishDrafts } from './drafts.mjs';
+import { submitDraft, finishDrafts, isPlanningDraft } from './drafts.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const validationPath = (root, change) => runtime(root, 'validation', `${hash(change)}.json`);
@@ -48,7 +48,7 @@ export function lifecycleActions({ selected, readiness, error, pending, preview,
   const deltas = readiness?.artifactPaths?.specs?.existingOutputPaths?.length || 0;
   add('sync-specs', 'Sync specifications', common || (!deltas ? 'No delta specifications are available to sync.' : ''));
   add('archive', 'Archive change', common || planning || (!complete ? 'Tracked tasks are incomplete. An archive exception requires workflow confirmation.' : ''));
-  add('archive-override', 'Request archive exception', common || (!planning && complete ? 'Use the normal archive action for completed work.' : ''));
+  add('archive-override', 'Archive change', common || planning || (!planning && complete ? 'Use the normal archive action for completed work.' : ''));
   return actions;
 }
 
@@ -68,12 +68,15 @@ export async function lifecycleState(root, change = '', { jobs, selected, getRea
   const validation = await readJSON(validationPath(root, change));
   if (validation) { try { validation.stale = validation.fingerprint !== await fingerprint(root, selected); } catch { validation.stale = true; } }
   const previewStale = await previewPlanChanged(root, selected, preview, result);
-  const state = { selected, readiness, error, jobs: relevant, pending, preview, result, validation, previewStale };
-  return { ...state, actions: lifecycleActions(state) };
+  const building = await isPlanningDraft(root, selected);
+  const state = { selected, readiness, error, jobs: relevant, pending, preview, result, validation, previewStale, building };
+  const actions = lifecycleActions(state);
+  if (building) for (const action of ['preview', 'apply', 'validate', 'verify', 'sync-specs', 'archive', 'archive-override']) actions[action] = { ...actions[action], enabled: false, reason: 'Finish planning before running this workflow step.' };
+  return { ...state, actions };
 }
 
 export async function requestLifecycle(root, payload, { getReadiness = localReadiness, runCLI = openspecJSON } = {}) {
-  const { action, change = '', message = '', branch, confirmBranch, planMode = 'next', requestKey, draftId } = payload;
+  const { action, change = '', message = '', branch, confirmBranch, planMode = 'next', requestKey, draftId, attachments } = payload;
   if (typeof change !== 'string' || change.length > 160) throw new Error('Invalid change name');
   const allowed = ['start-plan', 'create-change', 'explore', 'plan-next', 'propose', 'revise-plan', 'finish-planning', 'preview', 'verify', 'validate', 'refresh', 'sync-specs', 'archive', 'archive-override'];
   if (!allowed.includes(action)) throw new Error('Unknown lifecycle action');
@@ -82,7 +85,7 @@ export async function requestLifecycle(root, payload, { getReadiness = localRead
     if (requestKey) {
       const previous = (await listJobs(root)).find(job => job.requestKey === requestKey);
       if (previous) {
-        if (previous.change !== change || previous.action !== (action === 'archive-override' ? 'archive' : action) || message && previous.message !== message.trim()) throw new Error('Request identity was already used for different instructions');
+        if (JSON.stringify((previous.attachments || []).map(file => file.id)) !== JSON.stringify(attachments || []) || previous.change !== change || previous.action !== (action === 'archive-override' ? 'archive' : action) || message && previous.message !== message.trim()) throw new Error('Request identity was already used for different instructions');
         return { job: previous, url: previous.action === 'start-plan' ? `/?view=studio&new=1&creation=${previous.id}` : `/?${new URLSearchParams({ change, view: 'studio' })}` };
       }
     }
@@ -113,8 +116,8 @@ export async function requestLifecycle(root, payload, { getReadiness = localRead
       await writeJSON(validationPath(root, change), validation);
       return { validation };
     }
-    const goal = message || state.jobs.find(job => ['create-change', 'start-plan'].includes(job.action))?.message || 'Continue the selected workflow for this exact change.';
-    const job = await enqueue(root, { action: action === 'archive-override' ? 'archive' : action, change, message: goal, branch, confirmBranch, archiveOverride: action === 'archive-override', requestKey });
+    const goal = message || attachments?.length && 'Review the attached references within the requested action.' || state.jobs.find(job => ['create-change', 'start-plan'].includes(job.action))?.message || 'Continue the selected workflow for this exact change.';
+    const job = await enqueue(root, { action: action === 'archive-override' ? 'archive' : action, change, message: goal, branch, confirmBranch, archiveOverride: action === 'archive-override', requestKey, attachments });
     return { job, url: `/?${new URLSearchParams({ change, view: 'studio' })}` };
   });
 }

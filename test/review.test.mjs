@@ -232,7 +232,7 @@ test('planning updates use an immutable feedback export and reject archived chan
   assert.equal((await listJobs(root)).find(item => item.id === nextRequest.id).status, 'failed');
 });
 
-test('review HTTP routes enforce session protection and export all comments without mutating source', async t => {
+test('review HTTP routes enforce session protection and queue feedback without mutating source', async t => {
   const { root, job } = await fixture(t);
   const viewer = await startServer({ root, port: 0, quiet: true }); t.after(() => viewer.close());
   const html = await (await fetch(viewer.origin + '/?view=preview')).text();
@@ -243,12 +243,6 @@ test('review HTTP routes enforce session protection and export all comments with
   assert.equal((await post('/comments', { file: 'src/shared.mjs', body: 'Denied' }, false)).status, 403);
   assert.equal((await post('/comments', { file: 'src/shared.mjs', body: '<script>literal reviewer text</script>', side: 'proposed', start: '1' })).status, 201);
   assert.equal((await post('/comments', { file: 'src/deleted.mjs', body: 'Document migration.', side: 'current', start: '1' })).status, 201);
-  const exported = await post('/export'); assert.equal(exported.status, 201);
-  const download = (await exported.text()).match(/href="([^"]+)"/)[1];
-  const response = await fetch(viewer.origin + download);
-  assert.match(response.headers.get('content-type'), /text\/markdown/);
-  const feedback = await response.text();
-  assert.match(feedback, /src\/shared.mjs/); assert.match(feedback, /src\/deleted.mjs/);
   assert.equal(await fs.readFile(path.join(root, 'src/shared.mjs'), 'utf8'), 'export const count = 1;\nexport const other = true;\n');
   assert.equal((await post('/impact', { file: 'src/shared.mjs' })).status, 201);
   assert.equal((await post('/update-specs')).status, 201);
@@ -346,7 +340,7 @@ test('comments are grouped across files and current-file filtering keeps drafts 
   assert.equal(document.querySelector('[data-comment-filter="current"]').getAttribute('aria-pressed'), 'true');
   assert.equal(document.getElementById('review-comments-empty').hidden, false);
   assert.match(document.querySelector('[data-comment-empty-title]').textContent, /No comments on this file/);
-  assert.equal(document.querySelector('form[data-feedback-export] button').disabled, false);
+  assert.equal(document.querySelector('form[data-spec-update] button').disabled, false);
   document.querySelector('[data-comment-filter="all"]').click();
   assert.equal(document.getElementById('review-comments-empty').hidden, true);
   assert.ok([...document.querySelectorAll('[data-comment-file-group]')].every(group => !group.hidden));
@@ -458,7 +452,7 @@ test('Update spec submits once without HTMX, retains drafts and exposes retryabl
       requests.push(url);
       if (hold) await gate;
       if (failure === 'network') throw new TypeError('Network request failed');
-      if (failure === 'identity') return new Response(JSON.stringify({ update: { change: 'wrong' }, exported: {} }), { status: 201, headers: { 'Content-Type': 'application/json' } });
+      if (failure === 'identity') return new Response(JSON.stringify({ update: { change: 'wrong' }, feedback: {} }), { status: 201, headers: { 'Content-Type': 'application/json' } });
     }
     return fetch(new URL(url, viewer.origin), { ...options, headers: { ...options.headers, Origin: viewer.origin, ...(failure === 'session' ? { 'X-CSRF-Token': 'expired' } : {}) } });
   };
@@ -510,85 +504,6 @@ test('Update spec submits once without HTMX, retains drafts and exposes retryabl
   assert.equal(form().querySelector('button').disabled, false);
 });
 
-test('Export MD downloads all preview comments once without HTMX and survives live refreshes and failures', async t => {
-  const { root, job } = await fixture(t);
-  await addComment(root, job.id, { file: 'src/shared.mjs', body: 'Check this contract.' });
-  await addComment(root, job.id, { file: 'src/deleted.mjs', side: 'current', start: 1, body: 'Keep migration documented.' });
-  await put(root, 'openspec/changes/aaa-other-spec/proposal.md', '# Another spec\n');
-  const viewer = await startServer({ root, port: 0, quiet: true }); t.after(() => viewer.close());
-  const url = `/?change=review&view=preview&job=${job.id}&file=src/shared.mjs&mode=unified&context=all&wrap=0`;
-  const { document, window } = parseHTML(await (await fetch(viewer.origin + url)).text());
-  delete window.htmx; t.after(() => { delete window.htmx; });
-  Object.defineProperty(window.HTMLSelectElement.prototype, 'value', { configurable: true, get() { return this.querySelector('option[selected]')?.value || this.querySelector('option')?.value; }, set(value) { for (const option of this.querySelectorAll('option')) option.toggleAttribute('selected', option.value === value); } });
-  const downloads = [], requests = [];
-  const click = window.HTMLAnchorElement.prototype.click;
-  window.HTMLAnchorElement.prototype.click = function () { downloads.push({ url: this.getAttribute('href'), filename: this.download }); };
-  t.after(() => { window.HTMLAnchorElement.prototype.click = click; });
-  let release;
-  const gate = new Promise(resolve => { release = resolve; });
-  let failure = '', first = true;
-  const network = async (target, options) => {
-    requests.push({ url: target, options });
-    if (failure === 'network') throw new TypeError('Network request failed');
-    if (first) { first = false; await gate; }
-    const headers = { ...options.headers, Origin: viewer.origin };
-    if (failure === 'session') headers['X-CSRF-Token'] = 'expired';
-    return fetch(new URL(target, viewer.origin), { ...options, headers });
-  };
-  const context = vm.createContext({ document, window, location: Object.freeze({ pathname: '/', search: '', protocol: 'http:', host: new URL(viewer.origin).host }), URLSearchParams, CustomEvent: window.CustomEvent, fetch: network, localStorage: { getItem: () => null, setItem() {} }, WebSocket: class { addEventListener() {} }, setTimeout, clearTimeout, requestAnimationFrame: callback => callback() });
-  vm.runInContext(await fs.readFile(new URL('../public/app.js', import.meta.url), 'utf8'), context);
-  vm.runInContext(await fs.readFile(new URL('../public/review.js', import.meta.url), 'utf8'), context);
-  const currentForm = () => document.querySelector('[data-feedback-export]');
-  const submit = () => { const event = new window.Event('submit', { bubbles: true, cancelable: true }); currentForm().dispatchEvent(event); assert.equal(event.defaultPrevented, true); };
-  const waitFor = async predicate => { const deadline = Date.now() + 4000; while (!predicate()) { if (Date.now() > deadline) assert.fail(document.getElementById('review-feedback')?.textContent || 'Export did not finish'); await new Promise(resolve => setTimeout(resolve, 10)); } };
-  const refresh = async () => {
-    const updated = parseHTML(await (await fetch(viewer.origin + url)).text()).document.getElementById('workspace');
-    document.getElementById('workspace').outerHTML = updated.outerHTML;
-    document.dispatchEvent(new window.Event('htmx:afterSwap'));
-  };
-  assert.equal(currentForm().getAttribute('method'), 'post');
-  assert.equal(currentForm().getAttribute('action'), `/api/reviews/${job.id}/export`);
-  assert.equal(currentForm().hasAttribute('hx-post'), false);
-  document.getElementById('comment-filter-current').click();
-  const reader = document.querySelector('.diff-code-scroll'); reader.scrollTop = 123; reader.scrollLeft = 45;
-  submit(); submit();
-  assert.equal(requests.length, 1);
-  assert.equal(currentForm().getAttribute('aria-busy'), 'true');
-  assert.equal(currentForm().querySelector('button').disabled, true);
-  assert.equal(reader.scrollTop, 123); assert.equal(reader.scrollLeft, 45);
-  await refresh();
-  assert.equal(currentForm().querySelector('button').disabled, true);
-  submit(); assert.equal(requests.length, 1);
-  release();
-  await waitFor(() => downloads.length === 1 && !currentForm().querySelector('button').disabled);
-  assert.equal(requests[0].options.headers.Accept, 'application/json');
-  assert.equal(downloads[0].filename, 'openspec-review-feedback.md');
-  assert.match(downloads[0].url, new RegExp(`^/api/reviews/${job.id}/feedback/`));
-  const response = await fetch(viewer.origin + downloads[0].url);
-  assert.equal(response.status, 200);
-  assert.match(response.headers.get('content-disposition'), /attachment; filename="openspec-review-feedback.md"/);
-  const exported = await response.text();
-  assert.match(exported, /> Check this contract/); assert.match(exported, /> Keep migration documented/);
-  assert.equal((await listJobs(root)).filter(item => item.action === 'update-specs').length, 0);
-  await refresh();
-  assert.equal(document.querySelector('#review-feedback a').getAttribute('href'), downloads[0].url);
-  assert.equal(downloads.length, 1, 'refresh does not trigger another download');
-  assert.equal(document.getElementById('workspace').dataset.change, 'review');
-  assert.equal(document.querySelector('.file-diff').dataset.diffFile, 'src/shared.mjs');
-  assert.ok(document.querySelector('.unified-diff-table'));
-  assert.ok(document.querySelector('.diff-code-scroll.no-wrap'));
-  assert.equal(document.getElementById('comment-filter-current').getAttribute('aria-pressed'), 'true');
-  failure = 'session'; submit();
-  await waitFor(() => !!document.querySelector('#review-feedback .error-message') && !currentForm().querySelector('button').disabled);
-  assert.match(document.getElementById('review-feedback').textContent, /session expired.*Reload/i);
-  assert.equal(downloads.length, 1);
-  failure = 'network'; submit();
-  await waitFor(() => !!document.querySelector('#review-feedback .error-message') && !currentForm().querySelector('button').disabled);
-  assert.equal(downloads.length, 1);
-  failure = ''; submit();
-  await waitFor(() => downloads.length === 2 && !currentForm().querySelector('button').disabled);
-});
-
 test('Proposal and Design comments retain document versions and update OpenSpec before any implementation preview', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'opsx-doc-review-')); t.after(() => fs.rm(root, {recursive:true,force:true}));
   await initProject(root);
@@ -636,7 +551,7 @@ test('planning notes join only their own change and selected preview exports, wi
   const viewer=await startServer({root,port:0,quiet:true});t.after(()=>viewer.close());
   const page=parseHTML(await(await fetch(viewer.origin+`/?change=review&doc=${encodeURIComponent(file)}&view=rendered`)).text()).document;
   assert.equal(page.getElementById('review-comment-form').dataset.preview,review);
-  assert.equal(page.querySelector('[data-feedback-export]').dataset.preview,job.id);
+  assert.equal(page.querySelector('[data-spec-update]').dataset.preview,job.id);
   assert.equal(page.querySelectorAll('.review-comment').length,2);
   await enqueue(root,{action:'preview',change:'review'});
   const second=await claimNext(root,'Another implementation');
@@ -693,7 +608,7 @@ test('document controls save Proposal and Design feedback without HTMX or a prev
   await waitFor(()=>document.querySelectorAll('.review-comment').length===2&&!document.querySelector('#review-comment-form [type="submit"]').disabled);
   assert.equal(document.querySelectorAll('[data-comment-file-group]').length,2);
   assert.equal(document.getElementById('review-comment-form').dataset.file,design);
-  assert.ok(document.querySelector('[data-feedback-export] button:not([disabled])'));
+  assert.ok(document.querySelector('[data-spec-update] button:not([disabled])'));
   await put(root,proposal,'# Proposal\n\nChanged wording.\n');
   await switchDoc(proposal);
   assert.match(document.querySelector('.comment-stale').textContent,/Earlier version/);
@@ -872,7 +787,7 @@ test('delete removes diff and panel copies without HTMX, prevents duplicates, an
   await waitFor(()=>/Network|reach/i.test(document.querySelector(`#inline-diff-comment-${second.id} [data-delete-feedback]`).textContent)&&!document.querySelector(`#inline-diff-comment-${second.id} button`).disabled);
   assert.equal((await listComments(root,job.id)).length,1);
   failure='';submit(document.querySelector(`#comment-${second.id} [data-delete-comment]`));
-  await waitFor(()=>document.querySelectorAll('.review-comment').length===0&&document.querySelectorAll('.diff-comment').length===0&&document.querySelector('[data-feedback-export] button').disabled);
+  await waitFor(()=>document.querySelectorAll('.review-comment').length===0&&document.querySelectorAll('.diff-comment').length===0&&document.querySelector('[data-spec-update] button').disabled);
   assert.deepEqual(await listComments(root,job.id),[]);assert.equal(document.getElementById('review-comment-body').value,'Keep my in-progress review.');
  });
 });

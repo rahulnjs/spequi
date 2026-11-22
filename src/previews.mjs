@@ -51,7 +51,10 @@ export async function freezePreview(root, id, { change } = {}) {
     const before = await getBuffer(baseline, file), after = await getBuffer(work, file);
     if ((before && after && before.equals(after)) || (!before && !after)) continue;
     const tracking = !implementationPath(file);
-    if (tracking && !taskUpdate(file, before, after, change)) continue;
+    if (tracking && !taskUpdate(file, before, after, change)) {
+      if (change && file === `openspec/changes/${change}/tasks.md`) throw new Error('Task updates must only change checkbox states. Preserve tasks.md wording, order and line endings in the isolated copy, then finish again.');
+      continue;
+    }
     if (after?.length > 2 * 1024 * 1024 || before?.length > 2 * 1024 * 1024 || before?.includes(0) || after?.includes(0)) { unsupported.push(file); continue; }
     if (after) { const target = await within(proposed, file); await fs.mkdir(path.dirname(target), { recursive: true }); await fs.writeFile(target, after, { mode: (await fs.stat(await within(work, file))).mode & 0o777 }); }
     const oldText = before?.toString('utf8') || '', newText = after?.toString('utf8') || '';

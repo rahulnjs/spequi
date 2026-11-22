@@ -1,5 +1,6 @@
 (() => {
   const identities = new Map();
+  const generatedMessages = new Map();
   const drafts = new Map(), feedback = new Map(), busy = new Set();
   const scope = () => document.getElementById('workspace')?.dataset.change || 'project';
   const key = form => `${form.dataset.requestScope || scope()}:${form.id}`;
@@ -67,6 +68,10 @@
           else input.value = field.value;
         }
       }
+      if (form.hasAttribute('data-plan-publish') && form.dataset.messageJob && generatedMessages.get(id) !== form.dataset.messageJob) {
+        const input = form.querySelector('[name=message]');
+        if (input) { input.value = form.dataset.generatedMessage; remember(form); generatedMessages.set(id, form.dataset.messageJob); }
+      }
       const message = feedback.get(id); if (message) show(form, message.text, message.error);
       if (busy.has(id)) { form.setAttribute('aria-busy', 'true'); for (const button of form.querySelectorAll('button[type=submit]')) { if (!button.disabled) button.dataset.lifecycleBusy = 'true'; button.disabled = true; } }
     }
@@ -75,13 +80,33 @@
   document.addEventListener('change', event => { const form = event.target.closest('[data-lifecycle-form]'); if (form) remember(form); });
   document.addEventListener('htmx:beforeRequest', () => { for (const form of document.querySelectorAll('[data-lifecycle-form]')) remember(form); });
   document.addEventListener('htmx:afterSwap', restore);
+  function confirmPlanPublish(form) {
+    const dialog = document.getElementById('plan-push-dialog');
+    if (!dialog || dialog.open) return Promise.resolve(false);
+    const committing = form.dataset.planHasChanges === 'true';
+    dialog.querySelector('h2').textContent = 'Push spec files?';
+    dialog.querySelector('[data-push-branch]').textContent = form.dataset.branch;
+    dialog.querySelector('[data-push-message-row]').hidden = !committing;
+    dialog.querySelector('[data-push-message]').textContent = form.querySelector('[name=message]')?.value || '';
+    const files = JSON.parse(form.dataset.planFiles || '[]'), list = dialog.querySelector('[data-push-files]');
+    list.replaceChildren(...files.map(file => { const item = document.createElement('li'), code = document.createElement('code'); code.textContent = file; item.append(code); return item; }));
+    dialog.querySelector('[data-push-files-section]').hidden = !committing;
+    dialog.querySelector('[data-push-file-count]').textContent = `${files.length} spec ${files.length === 1 ? 'file' : 'files'} to commit`;
+    dialog.querySelector('[data-push-confirm]').textContent = 'Push spec files';
+    dialog.returnValue = 'cancel';
+    return new Promise(resolve => {
+      dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true });
+      dialog.showModal();
+    });
+  }
   document.addEventListener('submit', async event => {
     const form = event.target.closest('[data-lifecycle-form]'); if (!form) return;
     event.preventDefault(); event.stopImmediatePropagation();
     const id = key(form), workspace = document.getElementById('workspace');
-    if (busy.has(id)) return;
+    if (busy.has(id) || window.spequiAttachments?.busy(form)) return;
     const payload = {};
     for (const input of form.querySelectorAll('[name]')) if (input.type !== 'radio' || input.checked) payload[input.name] = input.value;
+    if (form.hasAttribute('data-attachment-scope')) payload.attachments = window.spequiAttachments?.ids(form) || [];
     if (form.hasAttribute('data-studio-composer')) { payload.action = payload.intent; delete payload.intent; }
     let endpoint = form.getAttribute('action');
     if (form.hasAttribute('data-studio-composer') && payload.message?.trim().startsWith('/')) { endpoint = '/api/lifecycle/command'; payload.command = payload.message.trim(); delete payload.action; delete payload.message; }
@@ -89,6 +114,11 @@
       payload.answer = [payload.choice, payload.answer?.trim()].filter(Boolean).join('\n\n');
       if (!payload.answer) { show(form, 'Choose an option or write an answer to continue.', true); return; }
       delete payload.choice;
+    }
+    if (form.hasAttribute('data-plan-publish') && !await confirmPlanPublish(form)) return;
+    if (form.hasAttribute('data-plan-message')) {
+      const editor = document.querySelector('#plan-publish-form [name=message]');
+      if (editor) { remember(editor.form); editor.readOnly = true; }
     }
     remember(form); busy.add(id); form.setAttribute('aria-busy', 'true');
     const buttons = [...form.querySelectorAll('button[type=submit]'), ...document.querySelectorAll(`button[type=submit][form="${form.id}"]`)].map(button => ({ button, disabled: button.disabled }));
@@ -99,7 +129,7 @@
         if (window.spequiSaveDraft) await window.spequiSaveDraft(form);
         form.dataset.draftSubmitting = 'true';
       }
-      if (endpoint === '/api/lifecycle/actions' || endpoint === '/api/lifecycle/command' || endpoint === '/api/jobs') {
+      if (endpoint === '/api/lifecycle/actions' || endpoint === '/api/lifecycle/command' || endpoint === '/api/jobs' || endpoint === '/api/plan-git/message') {
         const signature = JSON.stringify(payload), previous = identities.get(id);
         const identity = previous?.signature === signature ? previous : { signature, value: window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}` };
         identities.set(id, identity); payload.requestKey = identity.value;
@@ -121,12 +151,13 @@
         void window.spequiRefreshAgent?.();
       }
       if (result.job) {
+        if (form.hasAttribute('data-plan-message')) form.dataset.messageQueued = 'true';
         if (form.hasAttribute('data-create-spec')) form.dataset.draftSubmitted = result.job.id;
         clearFeedback(form, id);
         const persist = Boolean(result.url && workspace === document.getElementById('workspace') && result.job.change !== workspace?.dataset.change);
         document.dispatchEvent(new window.CustomEvent('spequi-toast', { detail: { message, persist } }));
       } else show(form, message, false, id);
-      if (result.job || payload.questionId) { drafts.delete(id); identities.delete(id); }
+      if (result.job || payload.questionId) { drafts.delete(id); identities.delete(id); if (form.hasAttribute('data-attachment-scope')) window.spequiAttachments?.clear(form); }
       // Do not redirect a response belonging to a page the user has already left.
       if (result.url && workspace === document.getElementById('workspace')) {
         const isCurrentChange = result.job?.change && result.job.change === workspace.dataset.change;
@@ -134,7 +165,7 @@
         for (const input of form.querySelectorAll('textarea')) input.value = '';
       }
       if (workspace === document.getElementById('workspace')) {
-        if (['plan-next', 'preview'].includes(result.job?.action)) {
+        if (['plan-next', 'propose', 'preview'].includes(result.job?.action)) {
           const url = new URL(workspace.dataset.refreshUrl || location.href, location.href);
           url.searchParams.set('follow', result.job.id);
           workspace.dataset.refreshUrl = url.pathname + url.search;
@@ -145,6 +176,7 @@
     } catch (error) {
       if (!error.draftNotification) show(form, error.message || 'Could not connect to the local viewer. Retry when it is running.', true, id);
     } finally {
+      if (form.hasAttribute('data-plan-message') && !form.dataset.messageQueued) { const editor = document.querySelector('#plan-publish-form [name=message]'); if (editor) editor.readOnly = false; }
       delete form.dataset.draftSubmitting;
       busy.delete(id); form.removeAttribute('aria-busy');
       for (const { button, disabled } of buttons) button.disabled = disabled;
@@ -155,4 +187,5 @@
       }
     }
   }, true);
+  restore();
 })();

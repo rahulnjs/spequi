@@ -1,3 +1,5 @@
+import { publishPlan, requestCommitMessage } from './plan-git.mjs';
+import { saveReviewImage, readReviewImage } from './review-images.mjs';
 import http from 'node:http';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
@@ -11,8 +13,8 @@ import { exists, readJSON, writeJSON, runtime, isPreviewSnapshotPath, acquireLoc
 import { inventory, readArtifact, escape, jobMatchesChange } from './specs.mjs';
 import { listJobs, enqueue, updateJob, agentStatus, getJob, pendingStatuses, createJobReader, claimNext, heartbeat, stopPolling, queueStatus } from './jobs.mjs';
 import { applyPreview, previewResult } from './previews.mjs';
-import { workspace, shell } from './views.mjs';
-import { addComment, deleteComment, exportFeedback, feedbackExport } from './review-store.mjs';
+import { workspace, shell, icon } from './views.mjs';
+import { addComment, deleteComment, exportFeedback, reviewScope } from './review-store.mjs';
 import { analyzeChange } from './spec-impact.mjs';
 import { directPreview } from './direct-preview.mjs';
 import { requestLifecycle, previewPlanChanged } from './lifecycle.mjs';
@@ -22,9 +24,10 @@ import { reportSession } from './agent-session.mjs';
 import { createWorkspaceState } from './workspace-state.mjs';
 import { listDrafts, saveDraft, deleteDraft, resumeDraft } from './drafts.mjs';
 import { requestPage, deleteRequest, retryRequest, dismissRequest, inboxState } from './requests.mjs';
+import { checkForUpdate } from './updates.mjs';
 import { viewerVersion } from './project.mjs';
 import { conversation } from './studio-view.mjs';
-import { initializeAnalytics, trackEvent } from './analytics.mjs';
+import { initializeAnalytics, trackEvent, analyticsConsent, saveAnalyticsConsent } from './analytics.mjs';
 import { validateBranch, confirmChangeBranch, saveChangeBranch } from './branches.mjs';
 
 const require = createRequire(import.meta.url);
@@ -50,6 +53,7 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
   let broadcast = () => {}, closed = false;
   const state = createWorkspaceState(root, { check: readinessCheck, changed: change => broadcast('readiness', { change }) });
   let origin;
+  const versionCheck = checkForUpdate(root);
   const send = (response, status, content, type = 'text/html; charset=utf-8', headers = {}) => {
     response.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', ...headers }); response.end(content);
   };
@@ -128,6 +132,8 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
           const expose = ({ claimToken, instructions, workflow, workingDirectory, ...job }) => job;
           return send(response, 200, JSON.stringify({ ...result, items: result.items.map(expose), recent: result.recent?.map(expose) }), 'application/json');
         }
+        if (url.pathname === '/api/update-status') return send(response, 200, JSON.stringify(await versionCheck), 'application/json');
+        if (url.pathname === '/api/privacy') return send(response, 200, JSON.stringify(await analyticsConsent(root)), 'application/json');
         if (url.pathname === '/api/activity') {
           const [jobs, drafts] = await Promise.all([jobReader.read(), listDrafts(root)]);
           const change = url.searchParams.get('change');
@@ -136,12 +142,13 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
           const relevant = jobs.filter(job => !job.hiddenAt && (selected && jobMatchesChange(job, selected) || job.id === url.searchParams.get('creation')));
           const draftStates = await Promise.all(drafts.map(async draft => ({ id: draft.id, change: draft.change, creationId: draft.creationId, status: jobs.find(job => job.id === draft.creationId)?.status, hasPlan: Boolean(draft.creationId && /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(draft.change) && await exists(path.join(root, 'openspec', 'changes', draft.change))) })));
           const inbox = requestPage(jobs, {}, { agent, dismissed: await inboxState(root) });
-          return send(response, 200, JSON.stringify({ notifications: jobs.filter(job => !job.hiddenAt).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 100).map(({ id, action, change, status, updatedAt }) => ({ id, action, change, status, updatedAt })), agent, attention: inbox.attention, inboxCount: inbox.total, revision: JSON.stringify(relevant.map(job => [job.id, job.status])), thread: conversation(relevant, agent), drafts: draftStates, active: jobs.filter(job => pendingStatuses.includes(job.status)).map(job => ({ id: job.id, change: job.change, status: job.status })) }), 'application/json');
+          return send(response, 200, JSON.stringify({ notifications: jobs.filter(job => !job.hiddenAt).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 100).map(({ id, action, change, status, updatedAt }) => ({ id, action, change, status, updatedAt })), agent, attention: inbox.attention, inboxCount: inbox.total, revision: JSON.stringify(relevant.map(job => [job.id, job.status])), thread: conversation(relevant, agent, icon), drafts: draftStates, active: jobs.filter(job => pendingStatuses.includes(job.status)).map(job => ({ id: job.id, change: job.change, status: job.status })) }), 'application/json');
         }
-        const feedbackMatch = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/feedback\/([a-zA-Z0-9_-]+)$/);
-        if (feedbackMatch) {
-          const exported = await feedbackExport(root, feedbackMatch[1], feedbackMatch[2]);
-          return send(response, 200, exported.document, 'text/markdown; charset=utf-8', { 'Content-Disposition': 'attachment; filename="openspec-review-feedback.md"' });
+        const imageMatch = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/(?:images|attachments)\/([a-f0-9-]{36}\.[a-z0-9]{1,12})$/);
+        if (imageMatch) {
+          await reviewScope(root, imageMatch[1]);
+          const image = await readReviewImage(root, imageMatch[1], imageMatch[2]);
+          return send(response, 200, image.bytes, image.type, image.type === 'application/octet-stream' ? { 'Content-Disposition': `attachment; filename="${image.id}"; filename*=UTF-8''${encodeURIComponent(image.name)}` } : {});
         }
         const patchMatch = url.pathname.match(/^\/api\/previews\/([a-zA-Z0-9_-]+)\/patch$/);
         if (patchMatch) {
@@ -153,13 +160,28 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
         const [data, jobs, drafts] = await Promise.all([state.data(), jobReader.read(), listDrafts(root)]);
         const agent = await agentStatus(root, { jobs });
         const content = await workspace({ root, data, params: Object.fromEntries(url.searchParams), jobs, drafts, agent, getReadiness: (_root, change) => state.readiness(change) });
-        return send(response, 200, request.headers['hx-request'] ? content : shell(content, data, csrf, Object.fromEntries(url.searchParams)), 'text/html; charset=utf-8', {
+        return send(response, 200, request.headers['hx-request'] ? content : shell(content, data, csrf, Object.fromEntries(url.searchParams), await analyticsConsent(root)), 'text/html; charset=utf-8', {
           'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         });
       }
       if (request.method !== 'POST') return send(response, 405, 'Method not allowed');
-      if (![origin, `http://localhost:${server.address().port}`].includes(request.headers.origin) || !tokenMatches(request.headers['x-csrf-token'], csrf)) return send(response, 403, '<p class="error-message">Local session verification failed. Reload the viewer and retry.</p>');
-      const payload = await body(request, url.pathname.startsWith('/api/source-preview/') ? 2 * 1024 * 1024 : 100000);
+      if (![origin, `http://localhost:${server.address().port}`].includes(request.headers.origin) || !tokenMatches(request.headers['x-csrf-token'], csrf)) {
+        const error = 'Your workspace session expired. Reload the page and retry.';
+        return request.headers.accept?.includes('application/json') ? send(response, 403, JSON.stringify({ error }), 'application/json') : send(response, 403, `<p class="error-message">${error}</p>`);
+      }
+      const imageUpload = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/(?:images|attachments)$/);
+      const payload = await body(request, imageUpload ? 7 * 1024 * 1024 : url.pathname.startsWith('/api/source-preview/') ? 2 * 1024 * 1024 : 100000);
+      if (imageUpload) {
+        await reviewScope(root, imageUpload[1]);
+        return send(response, 201, JSON.stringify({ image: await saveReviewImage(root, imageUpload[1], payload) }), 'application/json');
+      }
+      if (url.pathname === '/api/plan-git/message') return send(response, 201, JSON.stringify(await requestCommitMessage(root, payload)), 'application/json');
+      if (url.pathname === '/api/plan-git') return send(response, 200, JSON.stringify(await publishPlan(root, payload)), 'application/json');
+      if (url.pathname === '/api/privacy') {
+        const consent = await saveAnalyticsConsent(root, payload.choice);
+        if (consent.choice !== 'off') await trackEvent(root, 'project_used');
+        return send(response, 200, JSON.stringify(consent), 'application/json');
+      }
       if (url.pathname === '/api/analytics') {
         if (payload.event === 'project_used') await trackEvent(root, 'project_used');
         else if (payload.event === 'file_diff_viewed' && /^[a-zA-Z0-9_-]{1,100}$/.test(payload.preview_id || '') && Number.isInteger(payload.changed_file_count) && payload.changed_file_count > 0 && ['unified', 'split'].includes(payload.layout)) {
@@ -186,7 +208,8 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
       if (requestAction) {
         const result = requestAction[2] === 'dismiss' ? await dismissRequest(root, requestAction[1], payload) : requestAction[2] === 'delete' ? await deleteRequest(root, requestAction[1], payload) : { job: await retryRequest(root, requestAction[1]) };
         jobReader.invalidate(requestAction[1]);
-        broadcast('requests');
+        await jobReader.read();
+        broadcast('requests'); broadcast('agent');
         return send(response, 200, JSON.stringify(result), 'application/json');
       }
       if (['/api/lifecycle/actions', '/api/lifecycle/command'].includes(url.pathname)) {
@@ -207,7 +230,7 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
         const query = new URLSearchParams({ change: job.change, view: 'preview', job: job.id });
         return send(response, 201, JSON.stringify({ job: { id: job.id, change: job.change, origin: job.origin, status: job.status }, url: `/?${query}` }), 'application/json', { 'HX-Trigger': 'workspace-updated' });
       }
-      const reviewMatch = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/(comments|export|update-specs|impact)$/);
+      const reviewMatch = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/(comments|update-specs|impact)$/);
       if (reviewMatch) {
         const [, preview, action] = reviewMatch;
         if (action === 'comments') {
@@ -219,12 +242,10 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
           await enqueue(root, { action: 'impact', reviewPreview: preview, reviewFile: payload.file });
           return send(response, 201, '', undefined, { 'HX-Trigger': JSON.stringify({ 'spequi-toast': { message: 'Impact analysis queued for your attached agent.' }, 'workspace-updated': true }) });
         }
-        const exported = await exportFeedback(root, preview);
-        const update = action === 'update-specs' ? await enqueue(root, { action: 'update-specs', reviewPreview: preview, feedbackId: exported.id }) : null;
-        const downloadUrl = `/api/reviews/${preview}/feedback/${exported.id}`;
-        if (request.headers.accept?.includes('application/json')) return send(response, 201, JSON.stringify({ exported: { ...exported, downloadUrl }, ...(update ? { update: { id: update.id, change: update.change, status: update.status, reviewPreview: update.reviewPreview, feedbackId: update.feedbackId } } : {}) }), 'application/json');
-        if (update) return send(response, 201, '', undefined, { 'HX-Trigger': JSON.stringify({ 'spequi-toast': { message: 'OpenSpec planning update queued using this feedback document.', downloadUrl }, 'workspace-updated': true }) });
-        return send(response, 201, `<p class="success-message">${action === 'update-specs' ? 'OpenSpec planning update queued using this feedback document.' : 'Feedback document saved.'} <a href="${downloadUrl}" download="openspec-review-feedback.md">Download Markdown</a></p>`, undefined, { 'HX-Trigger': 'workspace-updated' });
+        const snapshot = await exportFeedback(root, preview);
+        const update = await enqueue(root, { action: 'update-specs', reviewPreview: preview, feedbackId: snapshot.id });
+        if (request.headers.accept?.includes('application/json')) return send(response, 201, JSON.stringify({ feedback: { id: snapshot.id, preview, count: snapshot.count }, update: { id: update.id, change: update.change, status: update.status, reviewPreview: update.reviewPreview, feedbackId: update.feedbackId } }), 'application/json');
+        return send(response, 201, '', undefined, { 'HX-Trigger': JSON.stringify({ 'spequi-toast': { message: 'Spec update queued for your attached agent.' }, 'workspace-updated': true }) });
       }
       const deleteMatch = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)\/comments\/([a-zA-Z0-9_-]+)\/delete$/);
       if (deleteMatch) {
@@ -240,6 +261,9 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
       const cancelMatch = url.pathname.match(/^\/api\/jobs\/([a-zA-Z0-9_-]+)\/cancel$/);
       if (cancelMatch) {
         await updateJob(root, cancelMatch[1], null, 'cancel', 'Cancelled in viewer');
+        jobReader.invalidate(cancelMatch[1]);
+        await jobReader.read();
+        broadcast('requests'); broadcast('agent');
         return send(response, 200, request.headers.accept?.includes('application/json') ? JSON.stringify({ cancelled: true }) : '<p>Request cancelled.</p>', request.headers.accept?.includes('application/json') ? 'application/json' : undefined, { 'HX-Trigger': 'workspace-updated' });
       }
       const applyMatch = url.pathname.match(/^\/api\/previews\/([a-zA-Z0-9_-]+)\/apply$/);
@@ -275,7 +299,7 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
   });
   broadcast = (type, detail = {}) => { for (const client of wss.clients) if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify({ type, ...detail })); };
   let timer, requestTimer, changeScope, globalChange = false;
-  const watcher = chokidar.watch([path.join(root, 'openspec'), runtime(root, 'jobs'), runtime(root, 'drafts'), runtime(root, 'agent.json'), runtime(root, 'agent-session.json'), runtime(root, 'previews'), runtime(root, 'reviews'), runtime(root, 'analyses'), runtime(root, 'validation'), runtime(root, 'studio')], { ignoreInitial: true, ignored: file => isPreviewSnapshotPath(file) || file.endsWith('.tmp') || file.endsWith('.lock') || file.endsWith('.recovery'), depth: 12, awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 50 } });
+  const watcher = chokidar.watch([path.join(root, 'openspec'), runtime(root, 'jobs'), runtime(root, 'drafts'), runtime(root, 'agent.json'), runtime(root, 'agent-session.json'), runtime(root, 'previews'), runtime(root, 'reviews'), runtime(root, 'analyses'), runtime(root, 'validation'), runtime(root, 'studio')], { usePolling: process.platform === 'win32', interval: 500, ignoreInitial: true, ignored: file => isPreviewSnapshotPath(file) || file.endsWith('.tmp') || file.endsWith('.lock') || file.endsWith('.recovery'), depth: 12, awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 50 } });
   watcher.on('all', (_event, watched) => {
     if ([runtime(root, 'agent.json'), runtime(root, 'agent-session.json')].includes(watched)) { broadcast('agent'); return; }
     if (watched.startsWith(runtime(root, 'jobs') + path.sep)) {
@@ -299,6 +323,7 @@ export async function startServer({ root = process.cwd(), port, quiet = false, r
   const interval = setInterval(() => broadcast('heartbeat'), 15000);
   interval.unref();
   if (!quiet) process.stdout.write(`\n  spequi\n  ${origin}\n  Project: ${root}\n\n  Attach the spequi skill in your agent to handle workflows.\n  Press Ctrl+C to stop.\n\n`);
+  void versionCheck.then(info => { if (info.available && !quiet) process.stdout.write(`  Spequi ${info.latest} is available (running ${info.current}). Run /spequi update in your agent when idle.\n`); });
   const close = async () => {
     if (closed) return;
     closed = true; state.close(); jobReader.close(); clearInterval(interval); clearTimeout(timer); clearTimeout(requestTimer);

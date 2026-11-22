@@ -16,17 +16,18 @@
   }
   document.addEventListener('pointerdown', event => closeDropdowns(event.target), true);
   document.addEventListener('keydown', event => { if (event.key === 'Escape') closeDropdowns(null, true); }, true);
-  function positionDropdown(panel) {
-    const trigger = dropdownTriggers(panel)[0];
-    if (!trigger) return;
-    const anchor = trigger.getBoundingClientRect(), width = Math.min(Number(panel.dataset.dropdownWidth) || 380, window.innerWidth - 24);
-    const below = window.innerHeight - anchor.bottom - 20, above = anchor.top - 20;
-    const opensBelow = below >= Math.min(220, Math.max(below, above));
-    panel.style.left = `${Math.max(12, Math.min(anchor.right - width, window.innerWidth - width - 12))}px`;
-    panel.style.top = opensBelow ? `${anchor.bottom + 8}px` : 'auto';
-    panel.style.bottom = opensBelow ? 'auto' : `${window.innerHeight - anchor.top + 8}px`;
-    panel.style.maxHeight = `${Math.max(0, Math.min(420, opensBelow ? below : above))}px`;
-  }
+  window.spequiPositionDropdown = (panel, trigger) => {
+    if (!panel || !trigger) return;
+    const anchor = trigger.getBoundingClientRect(), topbar = trigger.closest('.topbar')?.getBoundingClientRect();
+    const gutter = window.innerWidth <= 520 ? 8 : 16;
+    const width = Math.min(Number(panel.dataset.dropdownWidth) || panel.getBoundingClientRect().width || 380, window.innerWidth - gutter * 2);
+    const top = Math.max(gutter, (topbar?.bottom || anchor.bottom) + 8);
+    const right = topbar ? window.innerWidth - gutter : Math.min(anchor.right, window.innerWidth - gutter);
+    panel.style.width = `${width}px`; panel.style.left = `${Math.max(gutter, right - width)}px`;
+    panel.style.right = 'auto'; panel.style.top = `${top}px`; panel.style.bottom = 'auto';
+    panel.style.maxHeight = `${Math.max(0, Math.min(Number(panel.dataset.dropdownMaxHeight) || 640, window.innerHeight - top - gutter))}px`;
+  };
+  function positionDropdown(panel) { window.spequiPositionDropdown(panel, dropdownTriggers(panel)[0]); }
   document.addEventListener('beforetoggle', event => {
     if (!event.target.matches('[data-dropdown-panel]')) return;
     const open = event.newState === 'open';
@@ -58,6 +59,10 @@
   }
   for (const event of ['htmx:afterSettle', 'visibilitychange', 'click', 'keydown']) document.addEventListener(event, () => globalThis.requestAnimationFrame?.(recordUsage));
   globalThis.requestAnimationFrame?.(recordUsage);
+  document.addEventListener('toggle', event => {
+    if (!event.target.matches?.('#workspace-settings>details[open]')) return;
+    for (const detail of document.querySelectorAll('#workspace-settings>details[open]')) if (detail !== event.target) detail.open = false;
+  }, true);
   const themeToggle = document.getElementById('theme-toggle');
   function applyTheme(theme) {
     const dark = theme === 'dark' || theme === 'developer';
@@ -65,6 +70,8 @@
     const label = dark ? 'Switch to light mode' : 'Switch to dark mode';
     themeToggle?.setAttribute('aria-label', label);
     themeToggle?.setAttribute('title', label);
+    const visible = themeToggle?.querySelector('[data-theme-label]');
+    if (visible) visible.textContent = dark ? 'Light mode' : 'Dark mode';
   }
   try { applyTheme(localStorage.getItem('spequi-theme')); } catch { applyTheme('enterprise'); }
   themeToggle?.addEventListener('click', () => {
@@ -114,7 +121,7 @@
   }, true);
   document.addEventListener('htmx:afterSwap', updateNotificationControls);
   window.addEventListener('focus', updateNotificationControls);
-  document.addEventListener('beforetoggle', event => { if (event.target.id === 'notification-settings' && event.newState === 'open') updateNotificationControls(); }, true);
+  document.addEventListener('beforetoggle', event => { if (event.target.id === 'workspace-settings' && event.newState === 'open') updateNotificationControls(); }, true);
   updateNotificationControls();
   let pendingRefresh = false, refreshing = false, followUpRefresh = false, navigationRequests = 0, navigationGeneration = 0, backgroundXHR = null;
   const drafts = {};
@@ -122,23 +129,20 @@
   const sourceDrafts = new Map(), sourcePending = new Set(), sourceMessages = new Map();
   const initialDetailsToggle = document.getElementById('toggle-review-details');
   let reviewDetailsOpen = initialDetailsToggle ? initialDetailsToggle.getAttribute('aria-expanded') === 'true' : undefined, preserveReader = null;
-  function toast(message, downloadUrl = '', href = '') {
+  function toast(message, href = '') {
     const node = document.getElementById('toast'); if (!node) return;
     node.textContent = message;
-    if (/^\/api\/reviews\/[a-zA-Z0-9_-]+\/feedback\/[a-zA-Z0-9_-]+$/.test(downloadUrl)) {
-      const link = document.createElement('a'); link.href = downloadUrl; link.download = 'openspec-review-feedback.md'; link.textContent = 'Download Markdown'; node.append(link);
-    }
     if (typeof href === 'string' && href.startsWith('/?')) { const link = document.createElement('a'); link.href = href; link.textContent = 'Open result'; node.append(link); }
     node.classList.add('visible'); clearTimeout(node.hideTimer);
-    const dismiss = () => { node.hideTimer = setTimeout(() => node.classList.remove('visible'), downloadUrl || href ? 9000 : 4500); };
+    const dismiss = () => { node.hideTimer = setTimeout(() => node.classList.remove('visible'), href ? 9000 : 4500); };
     node.onpointerenter = node.onfocusin = () => clearTimeout(node.hideTimer);
     node.onpointerleave = node.onfocusout = dismiss; dismiss();
   }
   document.addEventListener('spequi-toast', event => {
-    const { message, downloadUrl = '', href = '', persist = false } = event.detail || {};
+    const { message, href = '', persist = false } = event.detail || {};
     if (typeof message !== 'string' || !message) return;
     if (persist) try { sessionStorage.setItem('spequi-toast', JSON.stringify({ message, at: Date.now() })); } catch {}
-    toast(message, downloadUrl, href);
+    toast(message, href);
   });
   try {
     const saved = JSON.parse(sessionStorage.getItem('spequi-toast')); sessionStorage.removeItem('spequi-toast');
@@ -363,15 +367,17 @@
     const buttons = [...document.querySelectorAll('[data-source-action] button')].map(button => ({ button, disabled: button.disabled }));
     for (const { button } of buttons) button.disabled = true;
     form.setAttribute('aria-busy', 'true');
-    feedback.className = ''; feedback.textContent = kind === 'analyze' ? 'Analyzing project files locally…' : 'Preparing proposed edits in a temporary copy…';
+    feedback.className = ''; feedback.textContent = kind === 'analyze' ? 'Scanning project files…' : 'Preparing proposed edits in a temporary copy…';
     let navigate = '';
     try {
       const payload = { change, ...(kind === 'patch' ? { patch: form.querySelector('[name="patch"]').value } : {}), ...(kind === 'model' ? { analysisId: form.querySelector('[name="analysisId"]').value, files } : {}) };
       const response = await fetch(form.getAttribute('action'), { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content }, body: JSON.stringify(payload) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'The request failed. Retry with the local viewer running.');
+      const json = response.headers.get('content-type')?.includes('application/json');
+      const result = json ? await response.json() : {};
+      if (response.status === 403) throw new Error(result.error || 'Your workspace session expired. Reload the page and retry.');
+      if (!response.ok || !json) throw new Error(result.error || 'The viewer returned an unexpected response. Reload the page and retry.');
       if (result.url) { navigate = result.url; if (kind === 'patch') sourceDrafts.delete(change); }
-      else { feedback.className = 'success-message'; feedback.textContent = 'Affected-file analysis saved.'; sourceMessages.set(change, { text: feedback.textContent }); pendingRefresh = true; }
+      else { feedback.className = 'success-message'; feedback.textContent = `${result.analysis.candidates.length} matching ${result.analysis.candidates.length === 1 ? 'file' : 'files'} found · ${result.analysis.coverage.scanned} scanned.`; sourceMessages.set(change, { text: feedback.textContent }); pendingRefresh = true; }
     } catch (error) { feedback.className = 'error-message'; feedback.textContent = error.message || 'Could not reach the viewer. Retry when it is running.'; sourceMessages.set(change, { text: feedback.textContent, error: true }); }
     finally {
       sourcePending.delete(change); form.removeAttribute('aria-busy');
@@ -437,4 +443,43 @@
   if (document.readyState === 'complete') loadHTMX();
   else window.addEventListener('load', loadHTMX, { once: true });
   connect();
+})();
+
+(() => {
+  const panel = document.getElementById('privacy-settings');
+  if (!panel) return;
+  const form = panel.querySelector('[data-consent-form]');
+  const marker = () => {
+    const update = panel.dataset.updateAvailable === 'true', pending = panel.dataset.consentPending === 'true';
+    const toggle = document.querySelector('[data-privacy-toggle]'), dot = document.querySelector('[data-privacy-dot]');
+    if (dot) dot.hidden = !update && !pending;
+    const label = update ? 'Settings — Spequi update available' : pending ? 'Settings — choose a usage preference' : 'Settings';
+    toggle?.setAttribute('aria-label', label); toggle?.setAttribute('title', label);
+  };
+  marker();
+  if (panel.dataset.consentPending === 'true') { document.getElementById('settings-sharing').open = true; document.getElementById('workspace-settings').showPopover?.(); }
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (form.hasAttribute('aria-busy')) return;
+    const feedback = form.querySelector('[data-consent-feedback]'), button = form.querySelector('[type=submit]');
+    form.setAttribute('aria-busy', 'true'); button.disabled = true; feedback.textContent = '';
+    try {
+      const response = await fetch('/api/privacy', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content }, body: JSON.stringify({ choice: new FormData(form).get('choice') }) });
+      if (!response.ok) throw new Error('Could not save your preference. Reload the viewer and retry.');
+      const saved = await response.json();
+      panel.dataset.consentPending = 'false'; marker();
+      feedback.textContent = saved.choice === 'off' ? 'Saved. No usage events will be sent.' : 'Saved for this project.';
+      document.dispatchEvent(new CustomEvent('spequi-toast', { detail: { message: feedback.textContent } }));
+      document.getElementById('workspace-settings').hidePopover?.();
+    } catch (error) { feedback.textContent = error.message; }
+    finally { form.removeAttribute('aria-busy'); button.disabled = false; }
+  });
+  void fetch('/api/update-status').then(response => response.ok ? response.json() : null).then(info => {
+    if (!info) return;
+    panel.dataset.updateAvailable = String(Boolean(info.available));
+    const note = document.querySelector('[data-update-note]');
+    if (!info.available) { if (note) note.textContent = `Spequi ${info.current}${info.unavailable ? ' · Update check unavailable offline' : ' · Up to date'}`; return; }
+    if (note) { note.hidden = false; note.textContent = `Update available: ${info.latest} (running ${info.current}). ${info.development ? 'Update your local checkout; published updates do not replace local source.' : 'Run /spequi update in your coding agent when idle.'}`; }
+    marker();
+  }).catch(() => {});
 })();

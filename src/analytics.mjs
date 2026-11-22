@@ -9,15 +9,41 @@ const endpoints = ['https://data.rahulnjs.com/api/spequi/sub/events', 'https://s
 const projects = new Map();
 const diffFailures = new Set();
 const run = promisify(execFile);
+const deliveries = new Map();
 
-async function deliverEvent(body) {
-  for (const endpoint of endpoints) {
-    try {
-      const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(5000) });
-      void response.body?.cancel().catch(() => {});
-      if (response.ok) return;
-    } catch {}
-  }
+export async function analyticsConsent(root) {
+  const config = await readJSON(runtime(root, 'config.json'));
+  const settings = config?.analytics;
+  return { choice: typeof settings?.enabled !== 'boolean' ? null : !settings.enabled ? 'off' : settings.shareIdentity === true ? 'identity' : 'anonymous' };
+}
+
+export async function saveAnalyticsConsent(root, choice) {
+  if (!['off', 'anonymous', 'identity'].includes(choice)) throw new Error('Choose a usage sharing preference');
+  await withLock(runtime(root, 'config.lock'), async () => {
+    const config = await readJSON(runtime(root, 'config.json'));
+    if (!config) throw new Error('Initialize this project before saving preferences');
+    config.analytics = { ...config.analytics, enabled: choice !== 'off', shareIdentity: choice === 'identity', consentAt: new Date().toISOString() };
+    await writeJSON(runtime(root, 'config.json'), config);
+  });
+  for (const controller of deliveries.get(root) || []) controller.abort();
+  projects.delete(root);
+  return { choice };
+}
+
+async function deliverEvent(root, body, choice) {
+  const controller = new AbortController();
+  if (!deliveries.has(root)) deliveries.set(root, new Set());
+  deliveries.get(root).add(controller);
+  try {
+    for (const endpoint of endpoints) {
+      try {
+        if ((await analyticsConsent(root)).choice !== choice || controller.signal.aborted) return;
+        const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]) });
+        void response.body?.cancel().catch(() => {});
+        if (response.ok) return;
+      } catch {}
+    }
+  } finally { deliveries.get(root)?.delete(controller); if (!deliveries.get(root)?.size) deliveries.delete(root); }
 }
 
 export async function trackDiffFailure(root, previewId, reason) {
@@ -27,7 +53,8 @@ export async function trackDiffFailure(root, previewId, reason) {
   await trackEvent(root, 'file_diff_failed', { preview_id: previewId, reason });
 }
 
-export function initializeAnalytics(root) {
+export async function initializeAnalytics(root) {
+  if (!['anonymous', 'identity'].includes((await analyticsConsent(root)).choice)) return null;
   if (!projects.has(root)) projects.set(root, (async () => {
     const identityFile = path.join(os.homedir(), '.spequi', 'identity.json');
     const identity = await withLock(`${identityFile}.lock`, async () => {
@@ -52,6 +79,8 @@ export function initializeAnalytics(root) {
 export async function trackEvent(root, event, properties = {}) {
   if (!['project_used', 'spec_created', 'file_diff_viewed', 'request_failed', 'file_diff_failed'].includes(event)) return;
   try {
+    const consent = await analyticsConsent(root);
+    if (!['anonymous', 'identity'].includes(consent.choice)) return;
     const metadata = await initializeAnalytics(root);
     if (!metadata) return;
     const occurred_at = new Date().toISOString();
@@ -77,6 +106,6 @@ export async function trackEvent(root, event, properties = {}) {
     delete payload.project_name; delete payload.git_user_name;
     Object.assign(payload, identity);
     // Finish local bookkeeping before returning; delivery tries the fallback only if the primary fails.
-    void deliverEvent(JSON.stringify(payload));
+    void deliverEvent(root, JSON.stringify(payload), consent.choice);
   } catch {}
 }

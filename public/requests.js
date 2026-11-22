@@ -2,7 +2,7 @@
   const panel = () => document.getElementById('requests-panel');
   const workspace = () => document.getElementById('workspace');
   const labels = { stalled: 'In progress · check CLI', queued: 'Queued', running: 'Working', 'awaiting-input': 'Answer needed', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled' };
-  const actions = { 'start-plan': 'New spec', 'plan-next': 'Next artifact', 'revise-plan': 'Spec revision', preview: 'Implementation preview', verify: 'Verification', explore: 'Question', 'update-specs': 'Review feedback', impact: 'File impact', archive: 'Archive' };
+  const actions = { 'commit-message': 'Commit message', 'start-plan': 'New spec', 'plan-next': 'Next artifact', 'revise-plan': 'Spec revision', preview: 'Implementation preview', verify: 'Verification', explore: 'Question', 'update-specs': 'Review feedback', impact: 'File impact', archive: 'Archive' };
   let page = 1, pages = 1, opener, activityPending, activityAgain = false, agent = {}, listGeneration = 0;
   const saves = new Map(), saved = new Map(), saveFailures = new Map(), deletedDrafts = new Set();
   const notificationKey = `spequi-request-notifications:${location.host}`;
@@ -60,17 +60,11 @@
     for (const toggle of document.querySelectorAll('[data-requests-toggle]')) toggle.setAttribute('aria-expanded', 'false');
   }
   function positionPanel() {
-    const drawer = panel(), anchor = document.querySelector('.topbar [data-requests-toggle]') || opener;
-    if (!drawer || drawer.hidden || !anchor?.getBoundingClientRect || !window.innerWidth) return;
-    const trigger = anchor.getBoundingClientRect(), header = anchor.closest('.topbar')?.getBoundingClientRect();
-    const gutter = window.innerWidth <= 520 ? 8 : 16, width = drawer.getBoundingClientRect().width;
-    const left = Math.max(gutter, Math.min(trigger.left, window.innerWidth - width - gutter));
-    const top = Math.max(gutter, Math.max(trigger.bottom, header?.bottom || 0) + 8);
-    drawer.style.left = `${Math.round(left)}px`; drawer.style.right = 'auto'; drawer.style.top = `${Math.round(top)}px`;
-    drawer.style.maxHeight = `${Math.max(0, Math.min(640, window.innerHeight - top - gutter))}px`;
+    const drawer = panel();
+    if (drawer && !drawer.hidden) window.spequiPositionDropdown?.(drawer, document.querySelector('.topbar [data-requests-toggle]') || opener);
   }
   function openLink(job) {
-    const stage = ['preview', 'impact'].includes(job.action) ? 'implement' : ['verify', 'sync-specs', 'archive'].includes(job.action) ? 'finish' : 'shape';
+    const stage = ['preview', 'impact'].includes(job.action) ? 'implement' : ['verify', 'sync-specs', 'archive', 'commit-message'].includes(job.action) ? 'finish' : 'shape';
     const query = job.action === 'start-plan' ? { view: 'studio', new: '1', creation: job.id } : {
       change: job.change || '', view: stage === 'shape' ? 'studio' : ['preview', 'impact'].includes(job.action) ? 'preview' : 'workflow', ...(stage === 'shape' ? { stage } : {}),
       ...(job.status === 'awaiting-input' ? { pane: 'conversation' } : {}),
@@ -122,9 +116,7 @@
     if (question && !question.answeredAt) row.append(replies.get(`${job.id}:${question.id}`) || window.spequiQuestionForm(job, question, 'inbox'));
     const detail = node('details'); detail.open = expanded.has(job.groupKey || job.id);
     const summary = node('summary'); summary.append(node('span', job.message || 'View request details', 'request-summary-text'), requestIcon('chevron')); detail.append(summary);
-    const body = node('div', undefined, 'request-detail-body'), log = node('ol');
-    for (const item of job.logs?.slice(-30) || []) log.append(node('li', item.message));
-    if (log.children.length) body.append(node('h3', 'Activity'), log);
+    const body = node('div', undefined, 'request-detail-body');
     if (job.result) body.append(node('h3', 'Result'), node('p', job.result, 'request-result'));
     if (job.stalled) body.prepend(node('p', 'This can take a few minutes. The result will appear here when ready. Your CLI may be waiting for a permission or another action.', 'request-status-note'));
     detail.append(body); row.append(detail);
@@ -221,12 +213,16 @@
     activityPending = (async () => {
       const result = await api('/api/activity?' + new URLSearchParams({ change: current.dataset.change || '', creation: query.searchParams.get('creation') || '' }));
       notifyTransitions(result.notifications);
+      if (agent.observedAt && result.agent.observedAt && result.agent.observedAt < agent.observedAt) { activityAgain = true; return; }
       agent = result.agent; document.dispatchEvent(new window.CustomEvent('agent-status', { detail: agent }));
       const attention = result.attention || 0, inboxCount = result.inboxCount ?? attention;
+      const answers = result.active.filter(job => job.status === 'awaiting-input').length;
+      for (const marker of document.querySelectorAll('[data-request-answer]')) { marker.hidden = !answers; marker.textContent = `${answers} ${answers === 1 ? 'answer needed' : 'answers needed'}`; }
       const markerLabel = inboxCount ? `${inboxCount} ${inboxCount === 1 ? 'item' : 'items'} in your inbox${attention ? `; ${attention} ${attention === 1 ? 'needs' : 'need'} your attention` : ''}` : 'No pending requests';
-      for (const count of document.querySelectorAll('[data-request-count]')) { count.textContent = inboxCount; count.hidden = !inboxCount; count.title = markerLabel; }
+      for (const count of document.querySelectorAll('[data-request-count]')) { count.textContent = inboxCount; count.hidden = !inboxCount || Boolean(answers); count.title = markerLabel; }
       for (const toggle of document.querySelectorAll('.topbar [data-requests-toggle]')) {
-        toggle.title = markerLabel; toggle.setAttribute('aria-label', `Requests. ${markerLabel}`);
+        toggle.dataset.answerNeeded = String(Boolean(answers));
+        toggle.title = answers ? `${answers} unanswered ${answers === 1 ? 'question' : 'questions'} — open Requests to reply` : markerLabel; toggle.setAttribute('aria-label', `Requests. ${answers ? `${answers} answers needed.` : markerLabel}`);
       }
       renderDrafts(result.drafts);
       for (const status of document.querySelectorAll('[data-job-state]')) status.textContent = labels[result.active.find(job => job.change === status.dataset.jobState)?.status] || '';
@@ -304,7 +300,7 @@
       await api(`/api/jobs/${encodeURIComponent(id)}/${action}`, payload);
       if (action === 'retry' || action === 'dismiss') { feedback(''); document.dispatchEvent(new window.CustomEvent('spequi-toast', { detail: { message: action === 'dismiss' ? 'Dismissed from inbox. History kept.' : 'Retry queued.' } })); }
       else feedback(action === 'delete' ? 'Request removed.' : 'Request cancelled.');
-      await Promise.all([activity(), loadRequests()]);
+      await Promise.all([activity(), loadRequests(), window.spequiRefreshAgent?.()]);
     }
     catch (error) { feedback(error.message, true); }
     finally { control.disabled = false; }
@@ -313,7 +309,7 @@
     const toggle = event.target.closest('[data-requests-toggle]');
     if (toggle) {
       const visible = panel().hidden; close(); panel().hidden = !visible;
-      if (visible) { opener = toggle; toggle.setAttribute('aria-expanded', 'true'); positionPanel(); panel().querySelector('[data-requests-close]').focus(); void loadRequests(); }
+      if (visible) { if (toggle.dataset.answerNeeded === 'true') { panel().querySelector('[data-request-filter]').value = 'inbox'; page = 1; } opener = toggle; toggle.setAttribute('aria-expanded', 'true'); positionPanel(); panel().querySelector('[data-requests-close]').focus(); void loadRequests(); }
       return;
     }
     if (event.target.closest('[data-requests-close]')) { close(); opener?.focus(); return; }
@@ -348,6 +344,7 @@
   document.addEventListener('requests-updated', () => { void activity(); void loadRequests(); });
   document.addEventListener('agent-status', event => {
     const next = event.detail;
+    if (agent.observedAt && next.observedAt && next.observedAt < agent.observedAt) return;
     const changed = agent.status !== next.status || agent.queue?.active?.id !== next.queue?.active?.id || agent.queue?.active?.ownerConnected !== next.queue?.active?.ownerConnected;
     agent = next;
     if (changed) { void activity(); void loadRequests(); }

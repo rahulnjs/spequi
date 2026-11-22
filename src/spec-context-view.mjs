@@ -27,13 +27,11 @@ export function specContextRows(context, rows, scope, mode, icon) {
       if (emitted.has(reference.key)) return `<a class="spec-context-repeat" href="#${id}">${icon('file')}Same requirement: ${e(reference.title)}</a>`;
       emitted.add(reference.key);
       const text = reference.quote.replace(/^#{1,6}\s+[^\n]+\n+/, '');
-      return `<details class="spec-context-quote" id="${id}" open><summary><span>${e(reference.title)}</span>${icon('chevron')}</summary><blockquote>${markdown(text)}</blockquote><p class="spec-context-source">${icon('file')}<span>${e(reference.spec)}<br>Lines ${reference.specStart}–${reference.specEnd} · Preview snapshot${reference.reason ? ` · ${e(reference.reason)}` : ''}</span></p></details>`;
+      return `<details class="spec-context-quote" id="${id}"><summary>${icon('book')}<span class="spec-context-label">Spec context</span><strong>${e(reference.title)}</strong><span class="spec-context-provenance ${suggested ? 'suggested' : ''}">${suggested ? 'Suggested' : 'Recorded'}</span>${icon('chevron')}</summary>${suggested ? '<p class="spec-context-caveat">Suggested from the saved plan; confirm relevance to this edit.</p>' : ''}<blockquote>${markdown(text)}</blockquote><p class="spec-context-source">${icon('file')}<span>${e(reference.spec)}<br>Lines ${reference.specStart}–${reference.specEnd} · Preview snapshot${reference.reason ? ` · ${e(reference.reason)}` : ''}</span></p></details>`;
     }).join('');
-    return `<tr class="spec-context-row"><td colspan="${mode === 'split' ? 6 : 4}"><section class="spec-context-inline" aria-label="${suggested ? 'Suggested spec context for this file' : 'Spec context for this change block'}"><div class="spec-context-heading">${icon('file')}<strong>Spec context</strong><span class="spec-context-provenance ${suggested ? 'suggested' : ''}">${suggested ? 'Suggested · file-level' : 'Agent linked'}</span></div>${suggested ? '<p class="spec-context-caveat">Matched from the saved spec. Confirm relevance; this is not a recorded explanation for this block.</p>' : ''}${entries}</section></td></tr>`;
+    return `<tr class="spec-context-row"><td colspan="${mode === 'split' ? 6 : 4}"><section class="spec-context-inline" aria-label="${suggested ? 'Suggested spec context for this file' : 'Spec context for this change block'}">${entries}</section></td></tr>`;
   };
   const empty = !context.links.length && !context.suggestions.length;
   const notice = context.notice || (empty ? 'No spec links recorded for this file.' : '');
-  const coverage = context.coverage;
-  const overview = coverage?.total ? `<div class="spec-context-overview"><span>${icon('book')}<strong>${coverage.requirements ? `${coverage.requirements} linked ${coverage.requirements === 1 ? 'spec section' : 'spec sections'}` : context.suggestions.length ? 'Suggested spec context' : 'Spec references'}</strong><span>${coverage.linked} of ${coverage.total} changed lines linked</span></span>${context.links.length || context.suggestions.length ? '<button type="button" class="text-button" data-spec-context-toggle aria-expanded="true">Collapse quotes</button>' : ''}</div>` : '';
-  return { render, leadingRows: first ? '' : render(rows[0]), overview, notice: notice ? `<p class="spec-context-notice">${e(notice)}</p>` : '' };
+  return { render, leadingRows: first ? '' : render(rows[0]), overview: '', notice: '' };
 }

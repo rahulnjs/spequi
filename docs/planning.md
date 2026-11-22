@@ -17,11 +17,12 @@ its generated planning files, after confirmation.
 ## Planning and workflow
 
 New specs and unfinished drafts show their planning artifact tabs directly. **Workflow** stays available beside the artifact and Files tabs. Choose **Finish planning** to move the change from Drafts into Review. This does not generate implementation code.
-Existing changes open in document review from the left panel. Continue a draft or open a planning request from **Requests** to return to its planning workspace.
+Existing changes open in document review from the left panel. Only unfinished drafts return to the planning workspace. Workflow keeps its numbered steps visible during planning, with clear statuses and disabled actions; implementation, validation, verification, sync and archive remain unavailable until Finish planning. Moving through Workflow and the document tabs preserves the planning workspace. Once planning is finished, document links, Requests and old planning URLs keep the change in Review. Completed task lists also open in Review. Comments and spec revisions remain available there.
 
 ### Planning artifacts
 
-- Select a planning artifact tab and use **Revise spec** to request an update, or **Ask a question** for a read-only exploration.
+- Select a planning artifact tab and use **Revise spec** to request an update, or **Ask a question** for a read-only exploration. Inline passage comments and **Update spec** are available during planning, before Finish planning. All planning Markdown artifacts can retain exact reviewed snapshots.
+- Commands in revision requests are proposed document content. Asking to use a different command changes the planned command; it does not execute it or implement code.
 - Changes appear as highlighted sections with a document summary. Highlights begin with revisions to existing text.
 - Artifacts with several documents use a dropdown showing each file's relative path and a description from its content.
 - **Planning actions** offers the next artifact or the full plan.
@@ -38,11 +39,19 @@ Existing changes open in document review from the left panel. Continue a draft o
 
 Task checkbox updates are retained separately and applied with the reviewed code, using the same conflict checks. Other planning edits are not applied.
 
-Optional local file analysis and configured model proposals are available under **Explore affected files**. Patch import is not shown in the workspace. See [Offline tools](offline-and-model.md).
+Optional local file analysis and configured model proposals are available under **Affected files**. Choose **Scan files** to analyze the plan locally. Patch import is not shown in the workspace. See [Offline tools](offline-and-model.md).
 
 ### Workflow
 
-Open **Workflow** for the numbered steps: prepare the plan; generate, review and apply; optionally validate specs and verify implementation; sync specs; archive. Each step explains what it does and shows its current state. Validation and verification run only when explicitly requested. Archive confirmations appear in the conversation.
+Open **Workflow** for the numbered steps: prepare the plan; generate, review and apply; optionally validate specs and verify implementation; sync specs; archive. Each step explains what it does, shows its current state, and identifies its actual OpenSpec command or agent skill. The separate Commands dropdown has been removed. Validation and verification run only when explicitly requested. Archive confirmations appear in the conversation.
+
+Compact command labels, such as `/opsx-sync`, sit beside the step headings. Hover for the underlying agent skill. **Archive change** is one action; the agent checks unfinished tasks and spec conflicts and asks for any needed confirmation in the conversation.
+
+### Save the plan to Git
+
+After all planning artifacts are generated, Build opens **Push spec files** in the main canvas, with the editable commit message, agent generation and file review together. The conversation stays on the right. You can save the generated files there before choosing **Finish planning**. The same form stays available under **Workflow > Prepare the plan**. Review the branch and changed planning-file list, then write a commit message or choose **Generate with agent**. The same attached agent reads only the reviewed planning changes and returns a message you can edit; it does not commit, push or modify files. The separate in-app **Commit & push** confirmation reviews the branch, message and file list before publishing. It uses the workspace styling rather than a browser alert.
+
+Only Markdown planning documents and `.openspec.yaml` under this change enter the commit. Unrelated staged edits remain staged. Normal Git hooks still run. Pushing publishes the branch’s earlier commits too, to the same branch name at the automatically selected push destination; it never force-pushes. If the commit succeeds but push fails, it stays locally and can be pushed after fixing authentication or remote access in the CLI. When nothing needs committing, the action becomes **Push spec files**. Resolve active agent requests first; a changed branch, plan, staging state or remote requires refreshing the review.
 
 Status, task readiness and strict validation use the installed `openspec` CLI locally, with no agent required.
 Missing or incompatible CLI capabilities disable those actions with an explanation. Checked task boxes alone do not
@@ -50,9 +59,7 @@ prove the implementation is correct.
 
 ## Commands
 
-The **Commands** picker shows the next executable command and previously completed commands. While a request is pending, it shows the request status and a link to the conversation. Dropdowns close when clicking outside or pressing Escape.
-
-The picker and typed slash commands use the same guarded operations. Supported commands are:
+Workflow is the primary action guide. The conversation composer still accepts these guarded app commands:
 
 | Command | Purpose |
 | --- | --- |
@@ -75,10 +82,11 @@ The picker and typed slash commands use the same guarded operations. Supported c
 Reasoning and writing requests use the current session running the viewer skill. The agent asks questions with
 `agent ask` and waits for the app's reply with `agent input --wait 300`. The job resumes with the same ownership token.
 
+- A distinct **answer needed** marker in the header separates unanswered questions from ordinary ongoing requests. Open it to see the question in the inbox.
 - Pending questions and reply controls appear directly in the Agent panel and Requests inbox. Replies survive live list refreshes.
 - Queued and awaiting-input requests can be cancelled. Cancelling an old waiting request frees the queue and keeps existing files. If its owner is disconnected, you can save an answer and resume the same coding session.
 - Longer requests can take a few minutes. Results appear in the workspace when ready. Check your CLI for permissions or other actions waiting for you.
-- Completion appears in an in-app toast. Open the header bell and choose **Enable notifications** to receive optional browser notifications while the page is in the background.
+- Completion appears in an in-app toast. Open **Settings > Notifications** and choose **Enable notifications** to receive optional browser notifications while the page is in the background.
 - A running request can be ended only after its owning session's heartbeat expires. Stop the old agent in your coding tool first; ending a request does not terminate its process or undo its edits.
 - Keep the agent session attached to continue waiting work.
 
@@ -88,7 +96,7 @@ An optional branch name on a new spec applies before the first agent request, in
 
 ## Diff generation scope
 
-**Generate file diff** only makes the file changes required by the selected specs in an isolated copy. It does not run validation, builds, linters, type checks or tests. Test files change only when the specs require them. The generating agent records exact spec links as it edits and returns a short change summary in the same request. The review shows how many changed lines have recorded links; suggested context stays separately labelled.
+**Generate file diff** only makes the file changes required by the selected specs in an isolated copy. It does not run validation, builds, linters, type checks or tests. Test files change only when the specs require them. The generating agent records exact spec links as it edits. Quotes start collapsed and can be toggled individually. The full-width summary and link-coverage bars have been removed; suggested context stays separately labelled.
 
 ## Native tool and file permissions
 
@@ -99,3 +107,17 @@ Questions sent through Spequi’s agent protocol can be answered in the Agent pa
 Planning versions are kept under `.spequi/studio/`. A revision stores the exact Markdown before a request and after it completes.
 The most recent 40 versions are retained, with at most 8 MiB of planning documents per version.
 This is local review evidence; the files under `openspec/` remain the source of truth.
+
+## Verification reports
+
+Verification is read-only and does not run tests or builds. The agent writes a Markdown report to `.spequi/verification/<job-id>.md` with inspected requirements/files, conclusions, findings with evidence and limitations. Completion ingests the report; a heading or generic “Completed” message is rejected. Earlier title-only results show **Report missing** and offer a rerun rather than a successful verification badge.
+
+## Runtime updates
+
+Run `/spequi update` in the host coding agent to refresh Spequi itself. This is different from the browser composer's `/update`, which revises planning documents. Startup checks show a version notice only; no automatic update occurs. Resolve active requests before updating, stop the project server, update, reload the skill from disk and restart/reattach. Queued work and project state are retained.
+
+The destination follows the branch’s push configuration, the repository’s push default, or its existing default connection. No destination selector is shown. If Git has no clear destination, configure it in the CLI first. A changed plan invalidates an agent-generated suggestion; generate a fresh message after reviewing the new files.
+
+The push stage lists the generated documents immediately. Open a document row to review it, then return through **Push spec files**. The commit-message field and **Generate with agent** stay together. Branch information is under **Branch & push details**.
+
+If Git ignores any selected spec files, the stage identifies them and disables pushing and message generation. Adjust the ignore rules in the CLI and refresh; Spequi does not override those rules or silently push existing commits instead.

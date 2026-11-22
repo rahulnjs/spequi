@@ -3,16 +3,7 @@
   const panels = () => document.querySelectorAll('#agent-connections, #mcp-connections');
   function close() { for(const panel of panels()) panel.hidden = true; for(const button of document.querySelectorAll('[data-session-toggle]')) button.setAttribute('aria-expanded','false'); }
   function positionMCP() {
-    for (const panel of panels()) {
-      const button = document.querySelector(`[data-session-toggle][aria-controls="${panel.id}"]`);
-      if (panel.hidden || !button?.getBoundingClientRect || !window.innerWidth) continue;
-      const anchor = button.getBoundingClientRect(), header = button.closest('.topbar')?.getBoundingClientRect();
-      const gutter = window.innerWidth <= 520 ? 8 : 16, width = panel.getBoundingClientRect().width;
-      const top = Math.max(gutter, Math.max(anchor.bottom, header?.bottom || 0) + 8);
-      panel.style.left = `${Math.round(Math.max(gutter, Math.min(anchor.right - width, window.innerWidth - width - gutter)))}px`;
-      panel.style.right = 'auto'; panel.style.top = `${Math.round(top)}px`;
-      panel.style.maxHeight = `${Math.max(0, window.innerHeight - top - gutter)}px`;
-    }
+    for (const panel of panels()) if (!panel.hidden) window.spequiPositionDropdown?.(panel, document.querySelector(`[data-session-toggle][aria-controls="${panel.id}"]`));
   }
   function text(id, value) { const node = document.getElementById(id); if (node) node.textContent = value; return node; }
   function lastSeen(at) {
@@ -24,6 +15,7 @@
     return new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
   function render(agent) {
+    if (current?.observedAt && agent.observedAt && agent.observedAt < current.observedAt) return;
     if (current && (current.status !== agent.status || current.connected !== agent.connected || current.agent !== agent.agent)) {
       const result = document.querySelector('[data-session-check-result]'); if (result) result.textContent = '';
     }
@@ -154,6 +146,7 @@
     }
   }
   document.addEventListener('agent-status',event => render(event.detail));
+  document.addEventListener('requests-updated', () => { void refresh(); });
   document.addEventListener('click',event => {
     const toggle = event.target.closest('[data-session-toggle]');
     const target = toggle && document.getElementById(toggle.getAttribute('aria-controls'));

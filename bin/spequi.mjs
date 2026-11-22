@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import { createInterface } from 'node:readline/promises';
 import { readJSON, runtime } from '../src/files.mjs';
+import { checkForUpdate, updateRuntime } from '../src/updates.mjs';
 import { reportSession } from '../src/agent-session.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { initProject, installSkill, viewerVersion } from '../src/project.mjs';
@@ -29,19 +29,10 @@ async function agentCall(operation, payload, fallback) {
 try {
   const [command, subcommand, id] = argv;
   if (command === 'init') {
-    const config = await readJSON(runtime(root, 'config.json'));
-    let shareIdentity;
-    if (typeof config?.analytics?.shareIdentity !== 'boolean' && process.stdin.isTTY && process.stdout.isTTY) {
-      const prompt = createInterface({ input: process.stdin, output: process.stdout });
-      try {
-        const answer = await prompt.question('Share this project’s folder name and Git user.name in usage events? Anonymous usage events are sent either way. Applies only to this project. [y/N] ');
-        shareIdentity = /^(y|yes)$/i.test(answer.trim());
-      } finally { prompt.close(); }
-    }
-    print(await initProject(root, { shareIdentity }));
+    print(await initProject(root));
     if (argv.includes('--start')) await startServer({ root, port: option('port') === undefined ? undefined : Number(option('port')) });
-    else process.stdout.write('\nReady. Run node .spequi/server.mjs, or invoke /spequi in your agent.\n');
-  } else if (command === 'start' || command === 'serve') await startServer({ root, port: option('port') === undefined ? undefined : Number(option('port')) });
+  } else if (command === 'update') print(argv.includes('--check') ? await checkForUpdate(root) : await updateRuntime(root));
+  else if (command === 'start' || command === 'serve') await startServer({ root, port: option('port') === undefined ? undefined : Number(option('port')) });
   else if (command === 'skill' && subcommand === 'install') print(await installSkill(root, argv.includes('--global')));
   else if (command === 'agent') {
     if (subcommand === 'report') {
@@ -87,5 +78,5 @@ try {
     } else if (subcommand === 'list') print(await agentCall('list', {}, async () => (await listJobs(root)).map(({ claimToken, instructions, ...job }) => job)));
     else throw new Error('Use agent report, wait, next, ask, input, log, finish, fail, or list');
   } else if (command === '--version' || command === '-v') process.stdout.write(viewerVersion + '\n');
-  else process.stdout.write(`spequi\n\n  spequi init [--start]       Scaffold .spequi and install project skills\n  spequi start [--port 4310]  Open the local project workspace\n  spequi skill install --global  Install the skill for future projects\n  spequi agent wait --wait 300   Wait for work without claiming it\n  spequi agent next              Claim when the current agent is ready\n  spequi agent log|finish|fail <id> --token <token> --message "result"\n  spequi agent ask <id> --token <token> --message "question" [--options '["Yes","No"]']\n  spequi agent input <id> --token <token> --wait 300\n  spequi agent report --file <session.json> [--name "Spequi Agent"]\n  spequi agent list\n\nEvery command accepts --root <project>. No build step or agent API key required.\n`);
+  else process.stdout.write(`spequi\n\n  spequi init [--start]       Scaffold .spequi and install project skills\n  spequi update [--check]    Refresh the published runtime, or check versions\n  spequi start [--port 4310]  Open the local project workspace\n  spequi skill install --global  Install the skill for future projects\n  spequi agent wait --wait 300   Wait for work without claiming it\n  spequi agent next              Claim when the current agent is ready\n  spequi agent log|finish|fail <id> --token <token> --message "result"\n  spequi agent ask <id> --token <token> --message "question" [--options '["Yes","No"]']\n  spequi agent input <id> --token <token> --wait 300\n  spequi agent report --file <session.json> [--name "Spequi Agent"]\n  spequi agent list\n\nEvery command accepts --root <project>. No build step or agent API key required.\n`);
 } catch (error) { process.stderr.write(`spequi: ${error.message}\n`); process.exitCode = 1; }

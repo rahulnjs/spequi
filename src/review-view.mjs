@@ -13,11 +13,12 @@ export async function renderReviewContext({ root, params, selected, context, job
   for (const doc of selected.files.filter(file => isCommentableArtifact(selected, file))) {
     try { fileHashes[doc] = documentHash(await readArtifact(root, doc)); } catch {}
   }
-  const base = { change: selected?.id, view: 'preview', job: job.id, mode: params.mode, wrap: params.wrap };
+  const base = { change: selected?.id, view: params.view === 'studio' ? 'studio' : 'preview', stage: 'shape', job: job.id, mode: params.mode, wrap: params.wrap };
   const feedback = renderComments({ comments, job, file, selected, jobs, base, fileHashes }, { icon, link });
   if (!showImpact || !file || !result) return feedback;
   let evidence;
   try { evidence = await dependencyImpact(root, job.id, file.file); }
   catch (error) { evidence = { error: error.message }; }
-  return renderImpactPanel({ file, evidence, result, jobs, preview: job.id, base }, { icon, link }) + feedback;
+  const linkWarning = result.specContext?.invalidReport || result.specContext?.invalidFiles?.includes(file.file) ? '<p class="inspector-section">Some recorded spec links were invalid and are not shown. Only verified references appear beside code.</p>' : '';
+  return linkWarning + renderImpactPanel({ file, evidence, result, jobs, preview: job.id, base }, { icon, link }) + feedback;
 }

@@ -39,13 +39,28 @@ export async function resumeDraft(root, id) {
     if (!draft) throw new Error('Draft not found');
     if ((await listJobs(root)).some(job => job.change === draft.change && pendingStatuses.includes(job.status))) throw new Error('Finish or cancel the active request before resuming this draft.');
     const hasPlan = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(draft.change) && await fs.stat(await within(root, `openspec/changes/${draft.change}`)).then(stat => stat.isDirectory(), error => { if (error.code === 'ENOENT') return false; throw error; });
+    if (hasPlan && await planningFinished(root, draft.change, draft.createdAt)) return { url: `/?${new URLSearchParams({ change: draft.change, view: 'rendered' })}` };
     if (hasPlan) return { url: `/?${new URLSearchParams({ change: draft.change, view: 'studio', draft: id })}` };
     const { creationId, planningClaimed, ...idea } = draft;
     await writeJSON(file(root, id), { ...idea, updatedAt: new Date().toISOString() });
     return { url: `/?${new URLSearchParams({ view: 'studio', new: '1', draft: id })}` };
   });
 }
+export async function planningFinished(root, change, createdAt) {
+  const finished = (await readJSON(runtime(root, 'planning-finished.json')))?.[change];
+  return Boolean(finished && (!createdAt || Date.parse(finished) >= Date.parse(createdAt)));
+}
+export async function isPlanningDraft(root, selected, drafts) {
+  if (!selected || selected.archived || selected.progress.total > 0 && selected.progress.done === selected.progress.total) return false;
+  const draft = (drafts || await listDrafts(root)).find(draft => draft.creationId && draft.change === selected.id);
+  return Boolean(draft && !await planningFinished(root, selected.id, draft.createdAt));
+}
 export async function finishDrafts(root, change) {
+  await withLock(runtime(root, 'planning-finished.lock'), async () => {
+    const finished = await readJSON(runtime(root, 'planning-finished.json')) || {};
+    finished[change] = new Date().toISOString();
+    await writeJSON(runtime(root, 'planning-finished.json'), finished);
+  });
   for (const draft of await listDrafts(root)) if (draft.change === change && draft.creationId) {
     await withLock(runtime(root, `draft-${draft.id}.lock`), () => fs.rm(file(root, draft.id), { force: true }));
   }
