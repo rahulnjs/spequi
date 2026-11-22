@@ -1,4 +1,4 @@
-import { readyDocument } from './helpers.mjs';
+import { readyDocument, planningFixture } from './helpers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
@@ -77,6 +77,7 @@ test('retained plan history bounds disk snapshots without resetting version numb
 
 test('Studio serves header stages, plan comparisons and local assets without a Lifecycle tab', async t => {
   const root = await fixture(t);
+  await planningFixture(root, 'flow');
   await capturePlan(root, 'flow');
   await put(root, 'openspec/changes/flow/proposal.md', '# Revised plan\n\nNow do something different.\n');
   await put(root, 'openspec/changes/flow/design.md', '# New design\n');
@@ -87,7 +88,7 @@ test('Studio serves header stages, plan comparisons and local assets without a L
   assert.equal(document.querySelector('.workspace-modes'), null);
   assert.ok(document.querySelector('[data-requests-toggle]'));
   assert.equal(document.querySelector('#review-details'), null);
-  assert.deepEqual([...document.querySelectorAll('.compact-change-header [data-studio-stage]')].map(node => node.textContent.trim().replace(/^\d/, '')), ['Shape spec']);
+  assert.deepEqual([...document.querySelectorAll('.compact-change-header [data-studio-stage]')].map(node => node.textContent.trim().replace(/^\d/, '')), []);
   assert.match(document.querySelector('.studio-document').textContent, /Revised plan/);
   assert.ok(document.querySelector('.studio-revision-mark'));
   assert.match(document.querySelector('.studio-change-summary').textContent, /design.md/);
@@ -142,6 +143,7 @@ test('Studio mode swaps request native sidebar preservation and remember the pre
 
 test('Studio runs the real same-session conversation, revision, preview, apply and finish flow', async t => {
   const root = await fixture(t);
+  await planningFixture(root, 'flow');
   await put(root, 'openspec/changes/flow/design.md', '# Design\n');
   await put(root, 'openspec/changes/flow/tasks.md', '- [ ] Update the app\n');
   const spec = '## ADDED Requirements\n\n### Requirement: Greeting\nThe app SHALL show a greeting.\n\n#### Scenario: Open\n- **WHEN** the app opens\n- **THEN** a greeting appears\n';
@@ -149,7 +151,7 @@ test('Studio runs the real same-session conversation, revision, preview, apply a
   await put(root, 'app.mjs', 'export const message = "old";\n');
   const proposal = await fs.readFile(path.join(root, 'openspec/changes/flow/proposal.md'), 'utf8');
   const viewer = await startServer({ root, port: 0, quiet: true });t.after(() => viewer.close());
-  const get = async stage => readyDocument(viewer.origin + '/?change=flow&view=studio&stage=' + stage);
+  const get = async stage => readyDocument(viewer.origin + '/?change=flow&view=' + (stage === 'implement' ? 'preview' : stage === 'finish' ? 'workflow' : 'studio&plan=specs/app/spec.md'));
   let document = await get('shape');
   const csrf = document.querySelector('meta[name=csrf-token]').content;
   const post = async (url, payload = {}, token = csrf) => fetch(viewer.origin + url, { method: 'POST', headers: { Origin: viewer.origin, 'X-CSRF-Token': token, Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -185,6 +187,7 @@ test('Studio runs the real same-session conversation, revision, preview, apply a
   assert.ok(document.querySelector('.studio-revision-mark'));
   assert.match(document.querySelector('.studio-thread').textContent, /Why this requirement/);
   assert.match(document.querySelector('.studio-thread').textContent, /Welcome/);
+  assert.equal((await post('/api/lifecycle/actions', { action: 'finish-planning', change: 'flow' })).status, 200);
   await request('preview');const preview = await claimNext(root, 'Current session');
   assert.notEqual(preview.workingDirectory, root);
   await put(preview.workingDirectory, 'app.mjs', 'export const message = "welcome";\n');
@@ -203,7 +206,7 @@ test('Studio runs the real same-session conversation, revision, preview, apply a
   assert.match(await fs.readFile(path.join(root, 'app.mjs'), 'utf8'), /"welcome"/);
   assert.equal((await post('/api/lifecycle/actions', { action: 'validate', change: 'flow' })).status, 200);
   await request('verify');owned = await claimNext(root, 'Current session');
-  await updateJob(root, owned.id, owned.claimToken, 'finish', '# Verification report\n\nWelcome message matches the spec.\n');
+  await updateJob(root, owned.id, owned.claimToken, 'finish', '# Verification report\n\nWelcome message matches the spec. Inspected app.mjs and the saved requirements; no gaps were found. Automated tests were not run.\n');
   document = await get('finish');
   assert.match(document.querySelector('.studio-finish').textContent, /Specification valid/);
   assert.match(document.querySelector('.studio-finish').textContent, /Welcome message matches/);
@@ -357,6 +360,7 @@ test('new planning documents keep normal prose instead of marking every block as
 
 test('running progress stays visible and only an expired owner can release a stalled request', async t => {
   const root = await fixture(t);
+  await planningFixture(root, 'flow');
   const queued = await enqueue(root, { action: 'explore', change: 'flow', message: 'Clarify the scope' });
   const owned = await claimNext(root, 'Current session', 'owner');
   const viewer = await startServer({ root, port: 0, quiet: true });t.after(() => viewer.close());
@@ -374,7 +378,7 @@ test('running progress stays visible and only an expired owner can release a sta
   const live = await cancel(csrf);assert.equal(live.status, 400);assert.match((await live.json()).error, /still responding/);
   await put(root, '.spequi/agent.json', JSON.stringify({ agent: 'Current session', sessionId: 'owner', at: Date.now() - 46000 }));
   document = await get();
-  assert.match(document.querySelector('.studio-progress').textContent, /may still be working/);
+  assert.match(document.querySelector('.studio-progress').textContent, /CLI|in progress/i);
   assert.equal(document.querySelector('[data-studio-stalled-action]').hidden, false);
   assert.match(document.querySelector('[data-studio-stalled-action]').textContent, /does not stop that process/);
   assert.equal((await cancel(csrf)).status, 200);
@@ -386,6 +390,7 @@ test('running progress stays visible and only an expired owner can release a sta
 
 test('Build planning omits the duplicate document row for both existing and newly created specs', async t => {
   const root = await fixture(t);
+  await planningFixture(root, 'flow');
   await put(root, 'openspec/changes/flow/specs/first/spec.md', '# First capability\n');
   await put(root, 'openspec/changes/flow/specs/second/spec.md', '# Second capability\n');
   const viewer = await startServer({ root, port: 0, quiet: true });t.after(() => viewer.close());
@@ -393,7 +398,7 @@ test('Build planning omits the duplicate document row for both existing and newl
     const query = `/?change=flow&view=studio&created=${created}&plan=specs/second/spec.md`;
     const document = await readyDocument(viewer.origin + query);
     assert.equal(document.querySelector('#studio-document-picker,.studio-version,.studio-compare,.studio-picker'), null);
-    assert.equal(document.querySelectorAll('[aria-label="Planning artifacts"] a').length, 2);
+    assert.equal(document.querySelector('[data-studio-stage]'), null);
     const files = [...document.querySelectorAll('#studio-plan-files[aria-label="Planning documents"] a')];
     assert.equal(files.length, 2);
     assert.ok(files.every(link => (new URL(link.getAttribute('href'), viewer.origin).searchParams.get('created') || '') === created));

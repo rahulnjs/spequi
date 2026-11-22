@@ -225,3 +225,7 @@
 .settings-panel .privacy-settings label{padding:8px}
 .settings-panel .settings-update{border-top:1px solid var(--line);margin:8px 0 0;padding:12px 10px 2px;color:var(--muted);font-size:11px;line-height:1.7}
 @media(max-width:760px){.settings-link,.settings-panel .settings-theme,.settings-panel>details>summary{min-height:44px}}
+
+.specification-workspace .reader:has(>.empty-state){display:flex;flex-direction:column}
+.specification-workspace .reader>.empty-state{width:100%;flex-shrink:0}
+.change-link.selected .nav-change small{color:var(--accent-text)}

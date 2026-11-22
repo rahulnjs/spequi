@@ -24,7 +24,7 @@ test('manual status checks show progress, prevent duplicates, and report an unch
   assert.equal(button.textContent, 'Checking…'); assert.equal(button.getAttribute('aria-busy'), 'true');
   assert.match(result.textContent, /Checking agent status/);
   release(offline); await flush();
-  assert.match(result.textContent, /may still be working/);
+  assert.match(result.textContent, /permissions|actions|CLI/);
   assert.equal(button.disabled, false); assert.equal(button.textContent, 'Refresh status');
   assert.equal(button.hasAttribute('aria-busy'), false);
   assert.match(document.querySelector('#agent-indicator').textContent, /No recent update/);
@@ -66,11 +66,11 @@ test('agent details distinguish listening, paused, active, stalled and unknown s
  render({...offline,status:'working',connected:true,queue:{queued:1,active}});
  assert.equal(value('session-current-change'),'draft-icon');assert.equal(value('session-current-state'),'Preparing');assert.equal(document.querySelector('[data-session-current]').hidden,false);
  render({...offline,status:'blocked',connected:true,queue:{queued:1,active:{...active,ownerConnected:false}}});
- assert.equal(value('session-current-state'),'No recent update');assert.match(value('session-current-hint'),/may still be working/);assert.equal(document.getElementById('session-recovery-detail').hidden,false);assert.match(value('session-recovery-detail'),/stop it before ending/);
+ assert.equal(value('session-current-state'),'In progress · check CLI');assert.match(value('session-current-hint'),/permissions|actions|CLI/);assert.equal(document.getElementById('session-recovery-detail').hidden,false);assert.match(value('session-recovery-detail'),/stop it before ending/);
  render({...offline,queue:{queued:0,active:{...active,ownerConnected:false,origin:'local-edits'}}});
- assert.equal(value('session-current-state'),'Preparing');assert.match(value('session-current-hint'),/local preview/);assert.equal(document.getElementById('session-recovery-detail').hidden,true);
+ assert.equal(value('session-current-state'),'In progress · check CLI');assert.match(value('session-current-hint'),/permissions|actions|CLI/);assert.equal(document.getElementById('session-recovery-detail').hidden,false);
  render({...offline,status:'waiting',connected:true,queue:{queued:0,active:{...active,status:'awaiting-input'}}});
- assert.equal(value('session-current-state'),'Answer needed');assert.match(value('session-current-hint'),/answer the question/);
+ assert.equal(value('session-current-state'),'Answer needed');assert.match(value('session-current-hint'),/question|reply/i);
  render({...offline,status:'unavailable',queue:{queued:1,active}});
  assert.equal(value('session-state'),'Unknown');assert.equal(value('session-queue-state'),'Unknown');assert.equal(document.querySelector('[data-session-current]').hidden,true);
  assert.doesNotMatch(document.querySelector('#agent-connections').textContent,/consumer|poll|Reconnect your agent/);

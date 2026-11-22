@@ -20,13 +20,13 @@ export function requestPage(jobs, { status = 'inbox', page = 1 } = {}, { agent, 
     for (const [key, history] of groups) {
       const retries = new Set(history.map(item => item.requestKey).filter(Boolean));
       const eligible = history.filter(job => (pendingStatuses.includes(job.status) || updated(job) > (dismissed[key] || '')) && !(job.status === 'failed' && retries.has(`retry-${job.id}`)));
-      const stalled = job => job.status === 'running' && !job.origin && agent?.queue?.active?.id === job.id && !agent.queue.active.ownerConnected && Date.now() - Date.parse(job.updatedAt) > 180000;
-      const priority = job => job.status === 'awaiting-input' ? 0 : stalled(job) ? 1 : job.status === 'failed' ? 2 : job.status === 'running' ? 3 : 4;
+      const stalled = job => job.status === 'running' && agent?.queue?.active?.id === job.id && !agent.queue.active.ownerConnected;
+      const priority = job => job.id === agent?.queue?.active?.id ? -1 : job.status === 'awaiting-input' ? 0 : stalled(job) ? 1 : job.status === 'failed' ? 2 : job.status === 'running' ? 3 : 4;
       const ongoing = eligible.filter(job => pendingStatuses.includes(job.status) || job.status === 'failed').sort((a, b) => priority(a) - priority(b) || newest(a, b));
       const completed = eligible.filter(job => job.status === 'completed').sort(newest);
       const job = ongoing[0] || completed[0];
       if (!job) continue;
-      const entry = { ...job, groupKey: key, groupCount: history.length, dismissThrough: history.reduce((latest, item) => updated(item) > latest ? updated(item) : latest, ''), stalled: Boolean(stalled(job)), needsAttention: ongoing.some(item => priority(item) <= 2) };
+      const entry = { ...job, groupKey: key, groupCount: history.length, dismissThrough: history.reduce((latest, item) => updated(item) > latest ? updated(item) : latest, ''), stalled: Boolean(stalled(job)), needsAttention: ongoing.some(item => ['awaiting-input', 'failed'].includes(item.status) || stalled(item)) };
       if (ongoing.length) items.push(entry); else recent.push(entry);
     }
     items.sort((a, b) => (a.status === 'awaiting-input' ? 0 : a.needsAttention ? 1 : a.status === 'running' ? 2 : 3) - (b.status === 'awaiting-input' ? 0 : b.needsAttention ? 1 : b.status === 'running' ? 2 : 3) || newest(a, b));

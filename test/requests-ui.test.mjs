@@ -42,7 +42,7 @@ test('Open request uses the shared spec workspace at the relevant stage and reta
   for (const [index, [action, status, stage]] of cases.entries()) {
     const link = document.querySelectorAll('.request-controls a')[index];
     const query = new URL(link.getAttribute('href'), 'http://localhost').searchParams;
-    assert.equal(query.get('view'), action === 'start-plan' || stage === 'shape' ? 'studio' : status === 'completed' && ['preview', 'impact'].includes(action) ? 'preview' : 'workflow');
+    assert.equal(query.get('view'), action === 'start-plan' || stage === 'shape' ? 'studio' : ['preview', 'impact'].includes(action) ? 'preview' : 'workflow');
     if (action === 'start-plan') {
       assert.equal(query.get('creation'), requests[index].id);
       assert.equal(query.get('new'), '1');
@@ -100,7 +100,7 @@ test('inbox displays grouped attention and progress, with five collapsed recent 
   const rows = document.querySelectorAll('[data-request-list]>.request-row');
   assert.equal(rows.length, 2); assert.equal(rows[0].dataset.requestId, 'question');
   assert.equal(rows[0].querySelector('.request-group-count').textContent, '2 actions');
-  assert.equal(rows[0].querySelector('.request-open').textContent, 'Reply');
+  assert.equal(rows[0].querySelector('.request-open').textContent, 'Open change');
   assert.equal(document.querySelector('[data-request-count]').textContent, '1');
   const recent = document.getElementById('requests-recent');
   assert.equal(recent.open, false); assert.equal(recent.querySelectorAll('.request-row').length, 5);

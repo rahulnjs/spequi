@@ -1,4 +1,4 @@
-import { readyDocument } from './helpers.mjs';
+import { readyDocument, planningFixture } from './helpers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
@@ -94,6 +94,14 @@ test('local validation stores structured findings and identifies changed inputs'
   await put(root, 'openspec/changes/flow/proposal.md', '# Changed\n');
   assert.equal((await lifecycleState(root, 'flow', options)).validation.stale, true);
   await assert.rejects(requestLifecycle(root, { action: 'validate', change: 'flow' }, { ...options, runCLI: async () => ({ items: [] }) }), /valid validation report/);
+  await put(root, 'openspec/changes/flow/proposal.md', '# Proposal\n');
+  await fs.mkdir(path.join(root, 'openspec/changes/archive'), { recursive: true });
+  await fs.rename(path.join(root, 'openspec/changes/flow'), path.join(root, 'openspec/changes/archive/2026-11-22-flow'));
+  const archived = await lifecycleState(root, '2026-11-22-flow', options);
+  assert.equal(archived.validation.stale, false);
+  assert.equal(archived.validation.valid, false);
+  await put(root, 'openspec/changes/archive/2026-11-22-flow/proposal.md', '# Edited archive\n');
+  assert.equal((await lifecycleState(root, '2026-11-22-flow', options)).validation.stale, true);
 });
 
 test('new-change requests are scoped scaffolds and do not write planning or source', async t => {
@@ -122,27 +130,27 @@ test('installed CLI returns bounded local readiness and validation without an ag
 
 test('shared workspace protects replies, escapes questions, and retains review navigation', async t => {
   const root = await fixture(t);
+  await planningFixture(root, 'flow');
   for (const file of ['proposal','design','tasks']) await put(root, `openspec/changes/flow/${file}.md`, `# ${file}\n`);
   const viewer = await startServer({ root, port: 0, quiet: true }); t.after(() => viewer.close());
   const get = async () => readyDocument(viewer.origin + '/?change=flow&view=studio');
   let document = await get();
-  assert.equal(document.querySelectorAll('[data-studio-stage]').length, 1);
+  assert.equal(document.querySelectorAll('[data-studio-stage]').length, 0);
   const review = await readyDocument(viewer.origin + '/?change=flow&view=rendered');
-  assert.equal(review.querySelector('.document-tab[href*="view=studio"]'), null);
-  assert.ok(review.querySelector('.document-tab[href*="view=preview"]'));
+  assert.ok(review.querySelector('.document-tab[href*="view=studio"]'), 'Build document navigation stays in planning until finished');
+  assert.ok([...review.querySelectorAll('.document-tab[aria-disabled=true]')].some(tab => tab.textContent === 'Files'), 'Files stays disabled during Build');
   assert.equal(document.querySelector('#workspace').classList.contains('review-details-open'), false);
-  assert.equal(document.querySelector('#review-details'), null);
+  assert.equal(Boolean(document.querySelector('#review-details')), false);
   const csrf = document.querySelector('meta[name=csrf-token]').content;
   const post = (url, payload, token = csrf) => fetch(viewer.origin + url, { method: 'POST', headers: { Origin: viewer.origin, 'X-CSRF-Token': token, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(payload) });
   assert.equal((await post('/api/lifecycle/actions', { action: 'preview', change: 'flow' })).status, 400);
-  const validation = await post('/api/lifecycle/actions', { action: 'validate', change: 'flow' }); assert.equal(validation.status, 200);
-  assert.equal((await validation.json()).validation.valid, false);
+  const validation = await post('/api/lifecycle/actions', { action: 'validate', change: 'flow' }); assert.equal(validation.status, 400, 'Build disables checks until planning is finished');
   await enqueue(root, { action: 'explore', change: 'flow', message: 'Question test' });
   const job = await claimNext(root, 'Same session');
   const { question } = await askJob(root, job.id, job.claimToken, { message: '<script>Question</script>', options: ['One', 'Two'] });
   document = await get();
   assert.equal(document.querySelector('.studio-question-text').textContent, '<script>Question</script>');
-  assert.equal(document.querySelector('.studio-question script'), null);
+  assert.equal(Boolean(document.querySelector('.studio-question script')), false);
   assert.equal(document.querySelectorAll('.studio-choice').length, 2);
   const endpoint = `/api/lifecycle/jobs/${job.id}/reply`;
   assert.equal((await post(endpoint, { questionId: question.id, answer: 'One' }, '')).status, 403);
@@ -201,6 +209,7 @@ test('archiving retains the change conversation and saved review while preventin
 
 test('guided flow keeps update and review together and applies from the diff', async t => {
   const root = await fixture(t);
+  await planningFixture(root, 'flow');
   for (const file of ['proposal','design']) await put(root, `openspec/changes/flow/${file}.md`, `# ${file}\n`);
   await put(root, 'openspec/changes/flow/tasks.md', '- [ ] Update the app\n');
   await put(root, 'openspec/changes/flow/specs/app/spec.md', '## ADDED Requirements\n\n### Requirement: App\nThe app SHALL show a message.\n\n#### Scenario: Open\n- **WHEN** the app opens\n- **THEN** a message appears\n');
@@ -210,20 +219,21 @@ test('guided flow keeps update and review together and applies from the diff', a
   await put(root, 'openspec/changes/flow/specs/app/spec.md', '## ADDED Requirements\n\n### Requirement: App\nThe app SHALL show a welcome message.\n\n#### Scenario: Open\n- **WHEN** the app opens\n- **THEN** a welcome message appears\n');
   await updateJob(root, revision.id, revision.claimToken, 'finish', 'Updated the welcome requirement.');
   const viewer = await startServer({ root, port: 0, quiet: true }); t.after(() => viewer.close());
-  const get = async view => readyDocument(viewer.origin + '/?change=flow&view=' + view);
+  const get = async view => readyDocument(viewer.origin + '/?change=flow&plan=specs/app/spec.md&view=' + view);
   let document = await get('studio');
-  assert.equal(document.querySelector('.studio-footer .primary').textContent.trim(), 'Finish planning');
+  assert.equal(document.querySelector('#studio-action-finish-planning button').textContent.trim(), 'Finish planning');
   assert.equal(document.querySelector('#studio-planning-tools').hasAttribute('open'), false);
   assert.match(document.querySelector('.studio-document').textContent, /welcome message/);
   assert.ok(document.querySelector('#studio-composer'));
   assert.ok(document.querySelector('#studio-planning-tools #studio-action-plan-next'));
+  await requestLifecycle(root, { action: 'finish-planning', change: 'flow' });
   await enqueue(root, { action: 'preview', change: 'flow' });
   const preview = await claimNext(root, 'Current agent');
   await put(preview.workingDirectory, 'app.mjs', 'export const message = "welcome";\n');
   await put(preview.workingDirectory, 'openspec/changes/flow/tasks.md', '- [x] Update the app\n');
   await updateJob(root, preview.id, preview.claimToken, 'finish', 'Preview ready');
-  document = await get('studio');
-  assert.equal(document.querySelector('.studio-footer .primary').textContent.trim(), 'Finish planning');
+  document = await get('rendered');
+  assert.equal(Boolean(document.querySelector('#studio-action-finish-planning')), false);
   const files = await get('preview');
   assert.equal(files.querySelector('.guided-file-actions [data-apply-form] button').disabled, false);
   assert.match(files.querySelector('.guided-file-actions').textContent, /Your project has not changed/);
@@ -290,8 +300,8 @@ test('Finish planning retains a ready draft until clicked and moves it to Review
   await updateJob(root, job.id, owned.claimToken, 'finish', 'Plan ready');
   const viewer = await startServer({ root, port: 0, quiet: true }); t.after(() => viewer.close());
   const build = await readyDocument(viewer.origin + '/?change=new-plan&view=studio');
-  assert.equal(build.querySelector('.studio-footer .primary').textContent.trim(), 'Finish planning');
-  assert.equal(build.querySelector('#studio-command-apply'), null);
+  assert.equal(build.querySelector('#studio-action-finish-planning button').textContent.trim(), 'Finish planning');
+  assert.equal(Boolean(build.querySelector('#studio-command-apply')), false);
   assert.equal((await listDrafts(root)).length, 1);
   const post = token => fetch(viewer.origin + '/api/lifecycle/actions', { method: 'POST', headers: { Origin: viewer.origin, 'X-CSRF-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'finish-planning', change: 'new-plan' }) });
   assert.equal((await post('bad')).status, 403);
@@ -301,7 +311,7 @@ test('Finish planning retains a ready draft until clicked and moves it to Review
   const review = await readyDocument(viewer.origin + result.url);
   assert.equal(review.querySelector('#workspace').dataset.workspaceMode, 'review');
   assert.ok(review.querySelector('[data-files-tab]'));
-  assert.equal(review.querySelector('.draft-link'), null);
+  assert.equal(Boolean(review.querySelector('.draft-link')), false);
   assert.equal((await listDrafts(root)).length, 0);
   assert.equal((await listJobs(root)).some(item => item.action === 'preview'), false);
 });

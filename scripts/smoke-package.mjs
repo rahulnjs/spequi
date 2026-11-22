@@ -76,12 +76,14 @@ try {
   assert.equal(await fs.readFile(path.join(root, 'app.mjs'), 'utf8'), original);
   const diff = await (await fetch(`${origin}/?change=smoke&view=preview&job=${preview.id}&file=app.mjs`)).text();
   assert.match(diff, /unified-diff-table/); assert.match(diff, /syntax-token/);
-  assert.match(diff, /Agent linked/); assert.match(diff, /The feature SHALL export an enabled flag/);
+  assert.match(diff, /Recorded/); assert.match(diff, /The feature SHALL export an enabled flag/);
   const build = await (await fetch(`${origin}/?change=smoke&view=studio&stage=implement&job=${preview.id}&file=app.mjs&mode=split`)).text();
-  assert.match(build, /split-diff-table/); assert.match(build, /Agent linked/);
+  assert.match(build, /split-diff-table/); assert.match(build, /Recorded/);
   const { comment } = await post(`/api/reviews/${preview.id}/comments`, { file: 'app.mjs', side: 'proposed', start: 1, end: 1, body: 'Document that the flag is enabled by default and add a scenario for that default.' });
-  const { exported, update } = await post(`/api/reviews/${preview.id}/update-specs`);
-  const feedback = await (await fetch(origin + exported.downloadUrl)).text();
+  const { feedback: retained, update } = await post(`/api/reviews/${preview.id}/update-specs`);
+  const { feedbackExport } = await import(path.join(installed, 'src/review-store.mjs'));
+  const exported = await feedbackExport(root, preview.id, retained.id);
+  const feedback = await fs.readFile(path.join(root, exported.file), 'utf8');
   assert.ok(feedback.includes(comment.id)); assert.ok(feedback.includes(comment.body)); assert.ok(feedback.includes('export const enabled = true;'));
   const hash = text => createHash('sha256').update(text).digest('hex');
   assert.equal(hash(feedback), exported.hash);
@@ -95,13 +97,13 @@ try {
   await fs.appendFile(path.join(root, spec), '\n#### Scenario: Default enabled flag\n- **WHEN** a consumer imports the default flag\n- **THEN** its value is true without configuration\n');
   await finish(planning);
   assert.equal(await fs.readFile(path.join(root, 'app.mjs'), 'utf8'), original);
-  assert.equal(hash(await (await fetch(origin + exported.downloadUrl)).text()), exported.hash);
+  assert.equal(hash(await fs.readFile(path.join(root, exported.file), 'utf8')), exported.hash);
   const state = await (await fetch(origin + '/api/state')).json();
   assert.equal(state.jobs.find(job => job.id === update.id).status, 'completed');
   assert.ok(state.jobs.every(job => !job.claimToken && !job.instructions));
   assert.match(await (await fetch(`${origin}/?change=smoke`)).text(), /The enabled flag defaults to true/);
   await post(`/api/reviews/${preview.id}/comments/${comment.id}/delete`, {}, 200);
-  assert.equal(hash(await (await fetch(origin + exported.downloadUrl)).text()), exported.hash);
+  assert.equal(hash(await fs.readFile(path.join(root, exported.file), 'utf8')), exported.hash);
   // A new preview uses the revised plan and exercises the actual protected apply route.
   await post('/api/jobs', { action: 'preview', change: 'smoke' });
   const latest = await next();

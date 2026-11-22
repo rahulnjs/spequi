@@ -167,6 +167,7 @@
       synchronizeExpansion(); synchronizePane();
       const thread = document.getElementById('studio-thread');
       const request = requestJump.dataset.studioRequest ? document.getElementById(`studio-job-${requestJump.dataset.studioRequest}`) : studio.querySelector('.studio-progress')?.closest('.studio-exchange') || thread?.querySelector('.studio-exchange:last-of-type');
+      request?.closest('.studio-request-history')?.setAttribute('open', '');
       request?.querySelector('.studio-history')?.setAttribute('open', '');
       const requestBox = request?.getBoundingClientRect?.(), threadBox = thread?.getBoundingClientRect?.();
       if (thread) thread.scrollTop = requestBox && threadBox ? thread.scrollTop + requestBox.top - threadBox.top - 18 : thread.scrollHeight;

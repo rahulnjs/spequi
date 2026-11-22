@@ -235,17 +235,14 @@ test('file diff generation displays progress and routes questions directly to im
   const queued = await (await fetch(viewer.origin + '/?view=preview')).text();
   assert.match(queued, /File diff queued/);
   assert.doesNotMatch(queued, /id="generate-file-diff"/);
-  const progress = parseHTML(queued).document.querySelector('.diff-empty-actions a');
-  assert.equal(new URL(progress.getAttribute('href'), viewer.origin).searchParams.get('view'), 'workflow');
+  assert.equal(parseHTML(queued).document.querySelector('.diff-empty-actions a'), null);
   const job = await claimNext(root, 'Fixture agent');
   const running = await (await fetch(viewer.origin + '/?view=preview')).text();
   assert.match(running, /Your agent is generating the file diff/);
   const { askJob } = await import('../src/job-dialogue.mjs');
   await askJob(root, job.id, job.claimToken, { message: 'Which behavior should change?' });
   const waiting = parseHTML(await (await fetch(viewer.origin + '/?view=preview')).text()).document;
-  const reply = waiting.querySelector('.diff-empty-actions a');
-  assert.equal(reply.textContent, 'Reply to agent');
-  assert.equal(new URL(reply.getAttribute('href'), viewer.origin).searchParams.get('pane'), 'conversation');
+  assert.match(waiting.querySelector('.studio-question').textContent, /Which behavior/);
   assert.equal(waiting.querySelector('#generate-file-diff'), null);
   await updateJob(root, job.id, job.claimToken, 'fail', 'A useful failure');
   const failed = await (await fetch(viewer.origin + '/?view=preview')).text();
@@ -262,7 +259,7 @@ test('Files empty state offers generation and offline tools within Review', asyn
   assert.equal(state.querySelector('.diff-empty-actions form [name=change]').value, 'add-feature');
   assert.equal(state.querySelector('.diff-empty-actions form [name=action]').value, 'preview');
   assert.equal(state.querySelector('.diff-empty-actions a'), null);
-  assert.ok(state.querySelector('#source-preview-tools'));
+  assert.ok(document.querySelector('#source-preview-tools'));
 });
 
 test('review selects retained preview versions and changed files without mixing snapshots', async t => {

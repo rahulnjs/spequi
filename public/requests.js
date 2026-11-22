@@ -124,7 +124,7 @@
     const kind = node('span', actions[job.action] || job.action, 'request-kind'); kind.title = kind.textContent;
     meta.append(kind, requestTime(job.updatedAt));
     const controls = node('div', undefined, 'request-controls'); controls.append(openLink(job));
-    if (['queued', 'awaiting-input'].includes(job.status) || job.status === 'running' && !job.origin && agent.queue?.active?.id === job.id && !agent.queue.active.ownerConnected) controls.append(button(job.status === 'running' ? 'End request' : 'Cancel request', 'cancel', job.id));
+    if (['queued', 'awaiting-input'].includes(job.status) || job.status === 'running' && agent.queue?.active?.id === job.id && !agent.queue.active.ownerConnected) controls.append(button(job.status === 'running' ? 'End request' : 'Cancel request', 'cancel', job.id));
     if (['failed', 'cancelled'].includes(job.status) && ['explore', 'preview', 'verify', 'impact'].includes(job.action)) controls.append(button('Retry', 'retry', job.id));
     if (!['queued', 'running', 'awaiting-input'].includes(job.status)) {
       const control = button(history ? 'Delete…' : 'Dismiss', history ? 'delete' : 'dismiss', job.id);

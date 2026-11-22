@@ -25,7 +25,7 @@ export async function previewPlanChanged(root, selected, preview, result) {
 
 async function fingerprint(root, selected) {
   const files = [];
-  for (const file of selected.files) files.push([file, hash(await readArtifact(root, file))]);
+  for (const file of selected.files) files.push([selected.archived ? file.replace(`/archive/${selected.id}/`, `/${selected.id.replace(/^\d{4}-\d{2}-\d{2}-/, '')}/`) : file, hash(await readArtifact(root, file))]);
   return hash(JSON.stringify(files));
 }
 
@@ -65,7 +65,7 @@ export async function lifecycleState(root, change = '', { jobs, selected, getRea
   if (!selected.archived) {
     try { readiness = await getReadiness(root, change); } catch (failure) { error = failure.message; }
   }
-  const validation = await readJSON(validationPath(root, change));
+  const validation = await readJSON(validationPath(root, change)) || (selected.archived ? await readJSON(validationPath(root, selected.id.replace(/^\d{4}-\d{2}-\d{2}-/, ''))) : null);
   if (validation) { try { validation.stale = validation.fingerprint !== await fingerprint(root, selected); } catch { validation.stale = true; } }
   const previewStale = await previewPlanChanged(root, selected, preview, result);
   const building = await isPlanningDraft(root, selected);

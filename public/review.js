@@ -282,8 +282,15 @@
     const code = document.querySelector('.diff-code-scroll'), codeTop = code?.scrollTop, codeLeft = code?.scrollLeft;
     const active = current?.contains(document.activeElement) ? { name: document.activeElement.name, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
     const disclosures = [...document.querySelectorAll('#workspace details[id]')].filter(node => node.id !== 'review-comment-composer').map(node => ({ id: node.id, open: node.hasAttribute('open') }));
-    const imported = document.importNode(updated, true);
-    document.getElementById('review-comments').replaceWith(imported);
+    let imported = document.importNode(updated, true);
+    const existing = document.getElementById('review-comments');
+    if (existing) existing.replaceWith(imported);
+    else {
+      const panel = html.querySelector('.studio-review'), heading = document.querySelector('.studio-conversation>header');
+      if (!panel || !heading) throw new Error(`${outcome}. Reload this view to refresh the comment list.`);
+      imported = document.importNode(panel, true);
+      heading.after(imported);
+    }
     for (const selector of ['[data-document-content]', '#document-discussion', '.file-diff']) {
       const next = html.querySelector(selector), current = document.querySelector(selector);
       if (next && current) current.replaceWith(document.importNode(next, true));

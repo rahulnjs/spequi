@@ -1,3 +1,4 @@
+import { planningFixture } from './helpers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -185,6 +186,7 @@ test('drafts resume saved ideas, bind one planning request, and never delete unr
 
 test('HTTP opens another spec while readiness is deliberately held, without waiting for the check', async t => {
   const root = await fixture(t); await put(root, 'openspec/changes/another/proposal.md', '# Another spec\n');
+  await planningFixture(root, 'feature');
   let release, called = false;
   const gate = new Promise(resolve => { release = resolve; });
   const viewer = await startServer({ root, port: 0, quiet: true, readinessCheck: async (actualRoot, change) => {
@@ -261,4 +263,34 @@ test('cancelled empty drafts can resume or be deleted, including after their req
   assert.equal((await listDrafts(root))[0].creationId, undefined);
   await saveDraft(root, { id: draft.id, change: 'cancelled-idea', message: 'The idea can still be edited' });
   await deleteDraft(root, draft.id); assert.equal((await listDrafts(root)).length, 0);
+});
+
+test('a replacement session can explicitly end a legacy job without reviving its owner', async t => {
+  const { writeJob } = await import('../src/jobs.mjs');
+  const root = await fixture(t);
+  await enqueue(root, { action: 'explore', change: 'feature' });
+  const old = await claimNext(root, 'Agent', 'old');
+  delete old.agentSessionId;
+  await writeJob(root, old);
+  await reportSession(root, { agent: 'Agent', sessionId: 'replacement', mcps: { supported: false, connections: [] } });
+  assert.equal((await agentStatus(root)).queue.active.ownerConnected, false);
+  await updateJob(root, old.id, null, 'cancel');
+  const next = await enqueue(root, { action: 'explore', change: 'feature' });
+  assert.equal((await claimNext(root, 'Agent', 'replacement')).id, next.id);
+});
+
+test('local preparation protects a live worker and allows cancellation after it has stopped', async t => {
+  const { registerLocalJob, writeJob } = await import('../src/jobs.mjs');
+  const root = await fixture(t);
+  const job = await enqueue(root, { action: 'preview', change: 'feature' });
+  Object.assign(job, { origin: 'model', status: 'running' });
+  const release = registerLocalJob(job);
+  try {
+    await writeJob(root, job);
+    assert.equal((await agentStatus(root)).queue.active.ownerConnected, true);
+    await assert.rejects(updateJob(root, job.id, null, 'cancel'), /still being prepared/);
+  } finally { release(); }
+  assert.equal((await agentStatus(root)).queue.active.ownerConnected, false);
+  await updateJob(root, job.id, null, 'cancel');
+  assert.equal((await getJob(root, job.id)).status, 'cancelled');
 });

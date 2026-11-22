@@ -35,6 +35,21 @@ const skillRoutes = {
 const jobPath = (root, id) => runtime(root, 'jobs', `${safeID(id)}.json`);
 const changes = new EventEmitter();
 changes.setMaxListeners(0);
+const localWorkers = new Set();
+export function registerLocalJob(job) {
+  job.workerPid = process.pid;
+  localWorkers.add(job.id);
+  return () => localWorkers.delete(job.id);
+}
+function ownerConnected(job, state) {
+  if (!job) return false;
+  if (job.origin) {
+    if (job.workerPid === process.pid) return localWorkers.has(job.id);
+    if (!Number.isInteger(job.workerPid) || job.workerPid <= 0) return false;
+    try { process.kill(job.workerPid, 0); return true; } catch (error) { return error.code !== 'ESRCH'; }
+  }
+  return Boolean(job.agentSessionId && state?.agent === job.agent && state.sessionId === job.agentSessionId && Date.now() - state.at < 45000);
+}
 export async function writeJob(root, job) {
   const previous = job.status === 'failed' ? await readJSON(jobPath(root, job.id)).catch(() => null) : null;
   await writeJSON(jobPath(root, job.id), job);
@@ -167,8 +182,8 @@ export async function heartbeat(root, agent = 'Spequi Agent', sessionId, { polli
   if (sessionId !== undefined && !/^[a-zA-Z0-9_-]{1,120}$/.test(sessionId)) throw new Error('Invalid agent session ID');
   const previous = await readJSON(runtime(root, 'agent.json'));
   const matching = previous?.agent === agent && (!sessionId || previous.sessionId === sessionId);
-  if (!matching || Date.now() - previous.at >= 10000 || polling && (Date.now() - (previous.lastPollAt || 0) >= 10000 || !previous.pollingUntil || pollId && previous.pollId !== pollId)) {
-    await writeJSON(runtime(root, 'agent.json'), { ...(matching ? previous : {}), agent: String(agent).slice(0, 100), ...(sessionId ? { sessionId } : {}), at: Date.now(), ...(polling ? { lastPollAt: Date.now(), pollingUntil: Date.now() + 15000, ...(pollId ? { pollId } : {}) } : {}) });
+  if (!matching || !previous.sessionId || Date.now() - previous.at >= 10000 || polling && (Date.now() - (previous.lastPollAt || 0) >= 10000 || !previous.pollingUntil || pollId && previous.pollId !== pollId)) {
+    await writeJSON(runtime(root, 'agent.json'), { ...(matching ? previous : {}), agent: String(agent).slice(0, 100), sessionId: sessionId || (matching && previous.sessionId) || randomUUID(), at: Date.now(), ...(polling ? { lastPollAt: Date.now(), pollingUntil: Date.now() + 15000, ...(pollId ? { pollId } : {}) } : {}) });
   }
 }
 export async function stopPolling(root, agent, sessionId, pollId) {
@@ -180,11 +195,11 @@ export async function queueStatus(root, jobs, state) {
   const lock = await lockStatus(runtime(root, 'queue.lock'));
   const active = jobs.find(job => ['running', 'awaiting-input'].includes(job.status));
   state ||= await readJSON(runtime(root, 'agent.json'));
-  const ownerConnected = Boolean(active && state?.agent === active.agent && (!active.agentSessionId || active.agentSessionId === state.sessionId) && Date.now() - state.at < 45000);
+  const ownerIsConnected = ownerConnected(active, state);
   const queued = jobs.filter(job => job.status === 'queued').length;
   const blocked = lock.exists && lock.age > 2000;
   const question = active?.status === 'awaiting-input' ? active.questions?.at(-1) : null;
-  return { status: blocked ? 'blocked' : active ? 'working' : lock.exists ? 'busy' : queued ? 'ready' : 'idle', queued, active: active ? { id: active.id, change: active.change, status: active.status, preparing: Boolean(active.preparing), origin: active.origin || null, ownerConnected, ...(question && !question.answeredAt ? { question: { id: question.id, message: question.message, options: question.options } } : {}) } : null,
+  return { status: blocked ? 'blocked' : active ? 'working' : lock.exists ? 'busy' : queued ? 'ready' : 'idle', queued, active: active ? { id: active.id, change: active.change, status: active.status, preparing: Boolean(active.preparing), origin: active.origin || null, ownerConnected: ownerIsConnected, ...(question && !question.answeredAt ? { question: { id: question.id, message: question.message, options: question.options } } : {}) } : null,
     ...(blocked ? { message: lock.stale ? 'An abandoned queue lock will be recovered on the next poll.' : 'The queue lock is held. Requests are saved; the queue is not empty.' } : {}) };
 }
 export async function agentStatus(root, { jobs } = {}) {
@@ -194,8 +209,8 @@ export async function agentStatus(root, { jobs } = {}) {
   jobs ||= await listJobs(root);
   const pending = jobs.find(job => job.agent === state?.agent && (!state?.sessionId || job.agentSessionId === state.sessionId) && ['running', 'awaiting-input'].includes(job.status));
   const queue = await queueStatus(root, jobs, state);
-  const stalled = queue.active && !queue.active.ownerConnected && !jobs.find(job => job.id === queue.active.id)?.origin;
-  if (stalled) queue.message = 'An earlier agent owns the active request. Stop that agent, then end the stalled request before continuing.';
+  const stalled = queue.active && !queue.active.ownerConnected;
+  if (stalled) queue.message = queue.active.origin ? 'The local preview worker stopped. End the interrupted request to continue.' : 'An earlier agent owns the active request. Stop that agent, then end the stalled request before continuing.';
   const ready = connected && state?.pollingUntil > Date.now() && queue.status !== 'blocked' && !stalled;
   const status = !connected ? state ? 'unresponsive' : 'unattached' : queue.status === 'blocked' || stalled ? 'blocked' : pending?.status === 'awaiting-input' ? 'waiting' : pending ? 'working' : ready ? 'live' : 'connected';
   const result = { ...state, connected, ready, status, queue, observedAt };
@@ -272,10 +287,8 @@ export async function updateJob(root, id, token, operation, message) {
     if (operation === 'cancel' && job.status === 'cancelled' || operation === 'finish' && job.status === 'completed' && token && token === job.claimToken || operation === 'fail' && job.status === 'failed' && token && token === job.claimToken) return job;
     if (operation === 'cancel') {
       if (job.status === 'running') {
-        if (job.origin) throw new Error('The offline preview is still being prepared. Wait for it to finish before removing it.');
         const state = await readJSON(runtime(root, 'agent.json'));
-        const ownerIsLive = state?.agent === job.agent && (!job.agentSessionId || state.sessionId === job.agentSessionId) && Date.now() - state.at < 45000;
-        if (ownerIsLive) throw new Error('The agent is still responding. Stop it in your coding tool before ending this request.');
+        if (ownerConnected(job, state)) throw new Error(job.origin ? 'The local preview is still being prepared. Wait for it to finish before ending this request.' : 'The agent is still responding. Stop it in your coding tool before ending this request.');
       } else if (!['queued', 'awaiting-input'].includes(job.status)) throw new Error('Only a pending request can be cancelled');
       job.status = 'cancelled';
     } else {

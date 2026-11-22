@@ -181,7 +181,7 @@ test('HTTP tools enforce session boundaries and complete analysis/model/review/a
   const page = await (await fetch(viewer.origin + '/?change=reset&view=studio&stage=implement')).text();
   const csrf = page.match(/name="csrf-token" content="([^"]+)"/)[1];
   const post = (route, value, protectedSession = true) => fetch(viewer.origin + route, { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(protectedSession ? { Origin: viewer.origin, 'X-CSRF-Token': csrf } : {}) }, body: JSON.stringify(value) });
-  assert.match(page, /Analyze affected files/); assert.match(page, /Import patch/);
+  assert.match(page, /Affected files/); assert.doesNotMatch(page, /Import patch/);
   assert.equal((await post('/api/source-preview/analyze', { change: 'reset' }, false)).status, 403);
   assert.equal((await post('/api/source-preview/analyze', { change: 'missing' })).status, 400);
   const analyzed = await post('/api/source-preview/analyze', { change: 'reset' }); assert.equal(analyzed.status, 201);
@@ -206,7 +206,7 @@ test('HTTP tools enforce session boundaries and complete analysis/model/review/a
   assert.doesNotMatch(state, /Authorization|apiKeyEnv|endpoint/);
 });
 
-test('Files forms submit once, retain patch/error state through refresh and validate explicit context selection', async t => {
+test('Files analysis submits once, retains errors through refresh and validates model context selection', async t => {
   const root = await fixture(t);
   await modelFixture(t, root, (_req, res) => answer(res, []));
   await analyzeChange(root, 'reset');
@@ -218,25 +218,22 @@ test('Files forms submit once, retain patch/error state through refresh and vali
   vm.runInNewContext(await fs.readFile(new URL('../public/app.js', import.meta.url), 'utf8'), {
     document, window, location: { protocol: 'http:', host: new URL(viewer.origin).host, assign: url => navigation.push(url), reload() {} },
     localStorage: { getItem() {}, setItem() {} }, WebSocket: class { addEventListener() {} }, setTimeout, clearTimeout,
-    fetch: async (url, options) => { requests.push({ url, payload: JSON.parse(options.body), headers: options.headers }); await gate; return { ok: false, json: async () => ({ error: 'Patch conflicts. Keep the draft and retry.' }) }; }
+    fetch: async (url, options) => { if (url === '/api/update-status') return { ok: false }; requests.push({ url, payload: JSON.parse(options.body), headers: options.headers }); await gate; return { ok: false, headers: { get: () => 'application/json' }, json: async () => ({ error: 'Patch conflicts. Keep the draft and retry.' }) }; }
   });
   const submit = node => node.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
   submit(document.getElementById('model-preview-form'));
   assert.equal(requests.length, 0);
   assert.match(document.getElementById('source-preview-feedback').textContent, /Select between 1 and 12/);
-  const patch = document.getElementById('source-preview-patch'); patch.value = 'retain this patch draft';
-  patch.dispatchEvent(new window.Event('input', { bubbles: true }));
-  const form = document.querySelector('[data-source-action="patch"]');
+  const form = document.querySelector('[data-source-action="analyze"]');
   submit(form); submit(form);
   assert.equal(requests.length, 1); assert.ok(requests[0].headers['X-CSRF-Token']);
-  assert.equal(requests[0].payload.patch, 'retain this patch draft');
+  assert.equal(requests[0].payload.change, 'reset');
   assert.ok(form.querySelector('button').disabled);
   finish(); for (let i = 0; i < 15; i++) await Promise.resolve();
   assert.equal(form.querySelector('button').disabled, false);
   assert.match(document.getElementById('source-preview-feedback').textContent, /Patch conflicts/);
-  patch.value = ''; document.getElementById('source-preview-feedback').textContent = '';
+  document.getElementById('source-preview-feedback').textContent = '';
   document.dispatchEvent(new window.Event('htmx:afterSwap'));
-  assert.equal(patch.value, 'retain this patch draft');
   assert.match(document.getElementById('source-preview-feedback').textContent, /Patch conflicts/);
   assert.deepEqual(navigation, []);
 });

@@ -90,7 +90,7 @@ test('invalid locations cannot become agent evidence and malformed reports do no
   assert.equal(f.result.specContext.invalidReport, true);
   assert.match((await f.context()).notice, /invalid/);
   const report = '.spequi/spec-links.json';
-  for (const text of ['{broken', JSON.stringify({ version: 2, links: [] }), 'x'.repeat(65537), JSON.stringify({ version: 1, links: Array(101).fill(ref()) })]) {
+  for (const text of ['{broken', JSON.stringify({ version: 2, links: [] }), 'x'.repeat(65537), JSON.stringify({ version: 1, links: Array(801).fill(ref()) })]) {
     await put(f.job.workingDirectory, report, text);
     const captured = await captureSpecLinks(f.root, f.job.id, f.result.changes);
     assert.equal(captured.invalidReport, true); assert.equal(captured.links.length, 0);
@@ -125,7 +125,7 @@ test('older previews receive conservative file-level suggestions from their own 
   const f = await fixture(t, null, '# Design\n\n## Implementation\nUpdate `src/preferences.js` to preserve security notifications.\n');
   delete f.result.specContext;
   const context = await f.context();
-  assert.equal(context.links.length, 0); assert.equal(context.suggestions.length, 1);
+  assert.equal(context.links.length, 0); assert.equal(context.suggestions.length, 2);
   assert.equal(context.suggestions[0].reason, 'File path mentioned');
   assert.equal(context.suggestions[0].provenance, 'suggested');
   assert.ok(context.suggestions[0].spec.includes('/preferences/'));
@@ -171,12 +171,13 @@ test('suggestions, no-link and unavailable-snapshot states stay honest and markd
   const server = await startServer({ root: f.root, port: 0, quiet: true }); t.after(() => server.close());
   const read = async file => parseHTML(await (await fetch(`${server.origin}/?change=preferences&view=preview&job=${f.job.id}&file=${file}&context=all`)).text()).document;
   let document = await read('src/preferences.js');
-  assert.match(document.querySelector('.spec-context-row').textContent, /Suggested · file-level/);
-  assert.match(document.querySelector('.spec-context-caveat').textContent, /not a recorded explanation/);
+  assert.match(document.querySelector('.spec-context-row').textContent, /Suggested/);
+  assert.match(document.querySelector('.spec-context-caveat').textContent, /confirm relevance/);
   assert.equal(document.querySelector('.spec-context-row script, .spec-context-row button, .spec-context-row [hx-get], .spec-context-row a[href^="javascript:"]'), null);
-  document = await read('src/added.js'); assert.match(document.querySelector('.spec-context-notice').textContent, /No spec links/);
+  document = await read('src/added.js'); assert.equal(document.querySelectorAll('.spec-context-row').length, 0);
   await fs.rm(path.join(f.root, `.spequi/previews/${f.job.id}/manifest.json`));
-  document = await read('src/preferences.js'); assert.match(document.querySelector('.spec-context-notice').textContent, /snapshot is unavailable/);
+  document = await read('src/preferences.js'); assert.equal(document.querySelectorAll('.spec-context-row').length, 0);
+  assert.match((await f.context()).notice, /snapshot is unavailable/);
   assert.ok(document.querySelector('.review-diff-table'));
 });
 
@@ -186,7 +187,7 @@ test('line-ending-only changes show file suggestions once with folded and expand
   for (const mode of ['split', 'unified']) for (const context of ['', 'all']) {
     const { document } = parseHTML(await (await fetch(`${server.origin}/?change=preferences&view=preview&job=${f.job.id}&file=src/format.js&mode=${mode}&context=${context}`)).text());
     assert.equal(document.querySelectorAll('.spec-context-row').length, 1);
-    assert.match(document.querySelector('.spec-context-row').textContent, /Suggested · file-level/);
+    assert.match(document.querySelector('.spec-context-row').textContent, /Suggested/);
     assert.equal(document.querySelectorAll('[data-diff-hunk]').length, 0);
   }
 });

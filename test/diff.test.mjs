@@ -103,7 +103,7 @@ test('review routes render highlighted folded code, wrapping controls, paging, a
   assert.match(html, /aria-label="Filter changed files"/);
   assert.equal((await fetch(viewer.origin + '/assets/diff.css')).status, 200);
   const { document } = parseHTML(html);
-  assert.deepEqual([...document.querySelectorAll('.document-tab>span:first-of-type')].map(node => node.textContent), ['proposal', 'design', 'tasks', 'Files']);
+  assert.deepEqual([...document.querySelectorAll('.document-tab>span:first-of-type')].map(node => node.textContent), ['proposal', 'specs', 'design', 'tasks', 'Files']);
   assert.equal(document.querySelector('.compact-change-header .diff-version-form,.compact-change-header .badge,.compact-change-header details'), null);
   assert.match(document.querySelector('.breadcrumbs').textContent, /Changes.*highlight/);
   assert.equal(document.querySelector('[data-review-details]').getAttribute('aria-expanded'), 'true');
@@ -111,7 +111,7 @@ test('review routes render highlighted folded code, wrapping controls, paging, a
   assert.equal(document.querySelector('.file-review-intro,.diff-context-toolbar,.change-header'), null);
   assert.deepEqual([...document.querySelectorAll('#review-details>.inspector-section>.section-title>h2')].map(node => node.textContent), ['File impact', 'Review comments', 'Change details']);
   assert.equal(document.querySelector('#review-details [data-apply-form],#review-details .workflow-form,#review-details .activity-section'), null);
-  for (const tab of document.querySelectorAll('.document-tab')) {
+  for (const tab of document.querySelectorAll('a.document-tab')) {
     const { document: next } = parseHTML(await (await fetch(viewer.origin + tab.getAttribute('href'))).text());
     if (next.querySelector('#workspace').dataset.view === 'workflow') {
       assert.equal(next.querySelector('#workspace').dataset.workspaceMode, 'review');
@@ -142,7 +142,7 @@ test('diff controls preserve review panel access, filter files, navigate change 
   vm.runInNewContext(source, {
     document, window, location: { protocol: 'http:', host: new URL(viewer.origin).host },
     localStorage: { getItem: key => stored.get(key), setItem: (key, value) => stored.set(key, value) },
-    WebSocket: class { addEventListener() {} }, setTimeout, clearTimeout
+    fetch: async () => ({ ok: false }), WebSocket: class { addEventListener() {} }, setTimeout, clearTimeout
   });
   const toggle = document.getElementById('toggle-review-details');
   const panel = document.getElementById('review-details');
@@ -195,7 +195,7 @@ test('context and layout changes restore the code scroller instead of scrolling 
   vm.runInNewContext(await fs.readFile(new URL('../public/app.js', import.meta.url), 'utf8'), {
     document, window, location: { protocol: 'http:', host: new URL(viewer.origin).host },
     localStorage: { getItem: () => null, setItem() {} },
-    WebSocket: class { addEventListener() {} }, setTimeout, clearTimeout
+    fetch: async () => ({ ok: false }), WebSocket: class { addEventListener() {} }, setTimeout, clearTimeout
   });
   const reader = document.querySelector('.reader');
   const code = document.querySelector('.diff-code-scroll');

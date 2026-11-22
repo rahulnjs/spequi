@@ -25,7 +25,7 @@ function session(storage = new Map(), { startInStudio = false } = {}) {
     emit(name, data) { this.listeners.get(name)?.({ data }); }
     close() { this.emit('close'); }
   }
-  const context = { document, window, location: { protocol: 'http:', host: '127.0.0.1:4310', pathname: '/', search: '' }, localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) }, WebSocket: Socket, fetch: async () => ({ ok: true, json: async () => currentAgent }), setTimeout: callback => { timers.push(callback); return timers.length; }, clearTimeout() {} };
+  const context = { document, window, location: { protocol: 'http:', host: '127.0.0.1:4310', pathname: '/', search: '' }, localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) }, WebSocket: Socket, fetch: async () => ({ ok: true, json: async () => currentAgent }), setTimeout: callback => { timers.push(callback); return callback; }, clearTimeout: callback => { const index = timers.indexOf(callback); if (index >= 0) timers.splice(index, 1); } };
   vm.runInNewContext(script, context);
   return { document, window, sockets, timers, setAgent: value => { currentAgent = value; }, blur: () => { active = null; } };
 }
@@ -94,17 +94,17 @@ test('reconnect refreshes missed changes, coalesces in-flight events and preserv
   document.getElementById('old-note').setAttribute('open', '');
   sockets[0].emit('open');
   assert.equal(requests.length, 0);
-  sockets[0].emit('message', JSON.stringify({ type: 'changed' }));
-  sockets[0].emit('message', JSON.stringify({ type: 'changed' }));
+  sockets[0].emit('message', JSON.stringify({ type: 'changed' })); timers.shift()();
+  sockets[0].emit('message', JSON.stringify({ type: 'changed' })); timers.shift()();
   assert.equal(requests.length, 1);
   release(); await flush();
   assert.ok(document.getElementById('old-note').hasAttribute('open'));
   assert.equal(document.querySelector('.reader').scrollTop, 180);
   assert.equal(document.querySelector('.reader').scrollLeft, 24);
   assert.equal(document.getElementById('toggle-review-details').getAttribute('aria-expanded'), 'true');
-  timers.shift()(); await flush();
+  timers.shift()(); timers.shift()(); await flush();
   assert.equal(requests.length, 2, 'an event during refresh is not lost');
-  sockets[0].emit('close'); timers.shift()(); sockets[1].emit('open'); await flush();
+  sockets[0].emit('close'); timers.shift()(); sockets[1].emit('open'); timers.shift()(); await flush();
   assert.equal(requests.length, 3, 'reconnect alone refreshes the canonical selected review');
   assert.ok(requests.every(url => url === '/?change=review'));
 });
@@ -163,26 +163,28 @@ test('navigation aborts an older background refresh and prevents its state from 
   const complete = new window.Event('htmx:afterRequest'); complete.detail = { xhr: newXHR }; document.dispatchEvent(complete);
 });
 
-test('Files activates immediately, reports load failures with retry, and rejects responses after later navigation', () => {
-  const { document, window } = session();
+test('Files preserves the reader while loading, reports failures and rejects superseded responses', () => {
+  const { document, window, timers } = session();
   const workspace = document.getElementById('workspace');
   workspace.classList.add('compact-workspace', 'review-details-open');
   const tabs = document.createElement('nav');
-  tabs.innerHTML = '<a class="document-tab active" href="/?view=rendered">Proposal</a><a class="document-tab" data-files-tab href="/?view=preview" hx-get="/?view=preview" hx-target="#workspace">Files</a>';
+  tabs.innerHTML = '<a class="document-tab active" href="/?view=rendered">Proposal</a><a class="document-tab" data-files-tab href="/?view=preview" hx-get="/?view=preview" hx-target="#workspace"><span>Files</span></a>';
   workspace.querySelector('main').prepend(tabs);
   const files = tabs.querySelector('[data-files-tab]'), proposal = tabs.firstElementChild;
   const original = document.getElementById('draft'); original.value = 'Keep this draft';
   const event = (name, detail) => { const value = new window.Event(name); value.detail = detail; document.dispatchEvent(value); return value; };
   const xhr = { status: 0 };
   event('htmx:beforeRequest', { elt: files, target: workspace, xhr });
-  assert.ok(files.classList.contains('active'));
-  assert.match(document.querySelector('.reader [role=status]').textContent, /Opening your file review/);
-  assert.equal(document.querySelector('.reader').getAttribute('aria-busy'), 'true');
-  assert.equal(document.getElementById('review-details').hidden, true);
+  assert.ok(proposal.classList.contains('active'));
+  timers.shift()();
+  assert.equal(files.getAttribute('aria-busy'), 'true');
+  assert.equal(document.querySelector('.reader [role=status]'), null);
+  assert.equal(document.getElementById('review-details').hidden, false);
   xhr.status = 500;
   assert.equal(event('htmx:beforeSwap', { xhr, shouldSwap: true }).detail.shouldSwap, false);
   event('htmx:afterRequest', { xhr, failed: true });
-  assert.ok(document.querySelector('.files-load-error a[data-files-tab]'));
+  assert.match(document.getElementById('toast').textContent, /Could not load file changes/);
+  assert.equal(files.hasAttribute('aria-busy'), false);
   assert.equal(document.getElementById('draft'), original);
   assert.equal(original.value, 'Keep this draft');
   assert.ok(proposal.classList.contains('active'));

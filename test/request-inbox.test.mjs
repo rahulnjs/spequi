@@ -89,3 +89,15 @@ test('HTTP inbox defaults, history, badge and protected dismissal share the same
   assert.equal((await get('/api/requests?status=all')).total, 2);
   assert.equal((await listJobs(root)).length, 2);
 });
+
+
+test('the active queue blocker stays visible over earlier failures immediately', () => {
+  const failed = record('failed', 'feature', 'failed');
+  const running = { ...record('running', 'feature', 'running'), updatedAt: new Date().toISOString() };
+  const agent = { queue: { active: { id: running.id, ownerConnected: false } } };
+  const inbox = requestPage([running, failed], {}, { agent });
+  assert.equal(inbox.items[0].id, running.id);
+  assert.equal(inbox.items[0].stalled, true);
+  agent.queue.active.ownerConnected = true;
+  assert.equal(requestPage([running], {}, { agent }).attention, 0, 'a healthy running request needs no attention marker');
+});

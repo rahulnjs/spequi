@@ -11,7 +11,7 @@ const textExtensions = new Set('.js .mjs .cjs .ts .tsx .jsx .css .scss .html .sv
 const stop = new Set('that this with from have will shall must should when then given and the for are into only use uses using file files source sources change changes project system user users support existing current proposed implementation requirement requirements scenario scenarios add added modified removed return returns export exports import imports function const await async string boolean number true false null test tests code data name value selected local before after preview viewer'.split(' '));
 const words = text => [...new Set(text.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(word => word.length >= 4 && !stop.has(word)))];
 export function sourceEligible(file) {
-  return eligible(file) && !file.split('/').some(part => ['openspec', '.agents', '.claude', '.codex'].includes(part));
+  return eligible(file) && !file.split('/').some(part => ['openspec', '.agents', '.claude', '.codex', '.gigacode'].includes(part));
 }
 const location = (root, change) => runtime(root, 'analyses', `${hash(change)}.json`);
 

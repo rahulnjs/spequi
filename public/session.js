@@ -71,7 +71,7 @@
       }
     }
     const queue = agent.queue, active = status !== 'unavailable' ? queue?.active : null;
-    const stalled = active?.status === 'running' && !active.ownerConnected && !active.origin;
+    const stalled = active?.status === 'running' && !active.ownerConnected;
     text('session-queue-state', status === 'unavailable' || !queue ? 'Unknown' : queue.queued ? `${queue.queued} waiting` : 'Empty');
     const request = document.querySelector('[data-session-current]'); if (request) request.hidden = !active;
     text('session-current-change', active?.change || 'Project question');

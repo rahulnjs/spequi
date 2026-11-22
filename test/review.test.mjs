@@ -172,7 +172,7 @@ test('automatic impact summaries include export changes, related tests, and depe
   assert.ok(panel.querySelector('#impact-direct[open]'));
   assert.equal(panel.querySelector('#impact-downstream').hasAttribute('open'), false);
   assert.equal(panel.querySelector('#impact-coverage').hasAttribute('open'), false);
-  assert.equal(panel.querySelector('form[hx-post$="/impact"]'), null);
+  assert.equal(Boolean(panel.querySelector('form[hx-post$="/impact"]')), false);
   assert.equal((await listJobs(root)).length, beforeJobs);
   document.getElementById('impact-direct').removeAttribute('open');
   window.htmx = { ajax: async () => {
@@ -180,14 +180,14 @@ test('automatic impact summaries include export changes, related tests, and depe
     next.querySelector('#impact-direct').setAttribute('open', '');
     document.getElementById('workspace').replaceWith(next);
   } };
-  vm.runInNewContext(await fs.readFile(new URL('../public/app.js', import.meta.url), 'utf8'), { document, window, location: { pathname: '/', search: '', protocol: 'http:', host: new URL(viewer.origin).host }, localStorage: { getItem: () => null, setItem() {} }, WebSocket: class { addEventListener() {} }, setTimeout, clearTimeout });
+  vm.runInNewContext(await fs.readFile(new URL('../public/app.js', import.meta.url), 'utf8'), { document, window, fetch: async () => ({ ok: false }), location: { pathname: '/', search: '', protocol: 'http:', host: new URL(viewer.origin).host }, localStorage: { getItem: () => null, setItem() {} }, WebSocket: class { addEventListener() {} }, setTimeout, clearTimeout });
   document.dispatchEvent(new window.Event('workspace-updated'));
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(document.getElementById('impact-direct').hasAttribute('open'), false);
   const { document: unlinked } = parseHTML(await (await fetch(viewer.origin + `/?change=review&view=preview&job=${job.id}&file=src/new.mjs`)).text());
   assert.match(unlinked.querySelector('.impact-summary-title').textContent, /No static dependents found/);
   assert.ok(unlinked.querySelector('#impact-imports'));
-  assert.equal(unlinked.querySelector('#impact-direct'), null);
+  assert.equal(Boolean(unlinked.querySelector('#impact-direct')), false);
 });
 
 test('impact jobs require an owned, bounded, real report and retain preview/file identity', async t => {
@@ -250,11 +250,11 @@ test('review HTTP routes enforce session protection and queue feedback without m
   const review = parseHTML(await (await fetch(viewer.origin + `/?view=preview&job=${job.id}&file=src/shared.mjs&context=all&mode=unified`)).text()).document;
   assert.equal(review.querySelectorAll('.review-comment').length, 2);
   assert.ok([...review.querySelectorAll('.review-comment-body')].some(node => node.textContent === '<script>literal reviewer text</script>'));
-  assert.equal(review.querySelector('.review-comment-body script'), null);
+  assert.equal(Boolean(review.querySelector('.review-comment-body script')), false);
   assert.ok(review.querySelector('[data-review-line="1"][data-review-side="current"]'));
   assert.ok(review.querySelector('[data-review-line="1"][data-review-side="proposed"].has-comments'));
   assert.ok(review.querySelector('#file-impact'));
-  assert.equal(review.querySelector('.feedback-export-list'),null);
+  assert.equal(Boolean(review.querySelector('.feedback-export-list')), false);
   assert.equal((await fetch(viewer.origin + '/assets/review.js')).status, 200);
   assert.equal((await fetch(viewer.origin + '/assets/review.css')).status, 200);
 });
@@ -267,13 +267,13 @@ test('line selection, Shift ranges, panel access, per-file drafts, and saved fee
   window.HTMLElement.prototype.scrollIntoView = function () {};
   // Linkedom lacks the browser's select.value setter.
   Object.defineProperty(window.HTMLSelectElement.prototype, 'value', { configurable: true, get() { return this.querySelector('option[selected]')?.value || this.querySelector('option')?.value; }, set(value) { for (const option of this.querySelectorAll('option')) option.toggleAttribute('selected', option.value === value); } });
-  const context = vm.createContext({ document, window, location: { search: '', protocol: 'http:', host: new URL(viewer.origin).host }, URLSearchParams, localStorage: { getItem: () => null, setItem() {} }, WebSocket: class { addEventListener() {} }, setTimeout, clearTimeout, requestAnimationFrame: callback => callback() });
+  const context = vm.createContext({ document, window, fetch: async () => ({ ok: false }), location: { search: '', protocol: 'http:', host: new URL(viewer.origin).host }, URLSearchParams, localStorage: { getItem: () => null, setItem() {} }, WebSocket: class { addEventListener() {} }, setTimeout, clearTimeout, requestAnimationFrame: callback => callback() });
   vm.runInContext(await fs.readFile(new URL('../public/app.js', import.meta.url), 'utf8'), context);
   vm.runInContext(await fs.readFile(new URL('../public/review.js', import.meta.url), 'utf8'), context);
   document.getElementById('toggle-review-details').click();
   document.querySelector('[data-review-side="proposed"][data-review-line="1"]').click();
   assert.equal(document.getElementById('review-details').hidden, true);
-  assert.equal(document.getElementById('review-comment-form').querySelector('select,input[type=number]'),null);
+  assert.equal(Boolean(document.getElementById('review-comment-form').querySelector('select,input[type=number]')), false);
   assert.equal(document.getElementById('review-comment-context').textContent,'Proposed line 1');
   assert.equal(document.getElementById('review-comment-form').closest('[data-diff-thread]').dataset.diffSide, 'proposed');
   assert.equal(document.getElementById('review-comment-composer').hasAttribute('open'), true);
@@ -369,9 +369,9 @@ test('comments and agent reports never bleed into another retained preview', asy
   const original = await get(job.id), newer = await get(second.id);
   assert.equal(original.querySelectorAll('.review-comment').length, 1);
   assert.match(original.querySelector('.impact-report').textContent, /Original impact/);
-  assert.equal(original.querySelector('.impact-report script'), null);
+  assert.equal(Boolean(original.querySelector('.impact-report script')), false);
   assert.equal(newer.querySelectorAll('.review-comment').length, 0);
-  assert.equal(newer.querySelector('.impact-report'), null);
+  assert.equal(Boolean(newer.querySelector('.impact-report')), false);
 });
 
 test('Save comment posts once without HTMX, updates in place, and preserves the selected change and file', async t => {
@@ -385,7 +385,7 @@ test('Save comment posts once without HTMX, updates in place, and preserves the 
   Object.defineProperty(window.HTMLSelectElement.prototype, 'value', { configurable: true, get() { return this.querySelector('option[selected]')?.value || this.querySelector('option')?.value; }, set(value) { for (const option of this.querySelectorAll('option')) option.toggleAttribute('selected', option.value === value); } });
   const requests = [];
   const network = async (url, options = {}) => {
-    requests.push({ url, method: options.method || 'GET' });
+    if (url !== '/api/update-status') requests.push({ url, method: options.method || 'GET' });
     return fetch(new URL(url, viewer.origin), { ...options, headers: { ...options.headers, Origin: viewer.origin } });
   };
   const context = vm.createContext({ document, window, location: Object.freeze({ pathname: '/', search: '', protocol: 'http:', host: new URL(viewer.origin).host }), URLSearchParams, CustomEvent: window.CustomEvent, DOMParser: window.DOMParser, fetch: network, localStorage: { getItem: () => null, setItem() {} }, WebSocket: class { addEventListener() {} }, setTimeout, clearTimeout, requestAnimationFrame: callback => callback() });
@@ -480,7 +480,7 @@ test('Update spec submits once without HTMX, retains drafts and exposes retryabl
   release();
   await waitFor(() => !form().hasAttribute('aria-busy') && toasts.length === 1);
   assert.match(toasts[0].message, /Spec update queued/);
-  assert.equal(document.querySelector('#review-feedback .success-message'), null);
+  assert.equal(Boolean(document.querySelector('#review-feedback .success-message')), false);
   const queued = (await listJobs(root)).filter(item => item.action === 'update-specs'); assert.equal(queued.length, 1);
   assert.equal(typeof queued[0].feedbackId, 'string');
   assert.equal(form().querySelector('button').disabled, true);
@@ -492,10 +492,10 @@ test('Update spec submits once without HTMX, retains drafts and exposes retryabl
   await updateJob(root, claimed.id, claimed.claimToken, 'fail', '<script>Need clearer requirements</script>'); await refresh();
   assert.ok(document.querySelector('.comment-update-status.failed[open]'));
   assert.match(document.querySelector('.comment-update-status.failed').textContent, /Need clearer requirements/);
-  assert.equal(document.querySelector('.comment-update-status.failed script'), null);
+  assert.equal(Boolean(document.querySelector('.comment-update-status.failed script')), false);
   assert.equal(form().querySelector('button').disabled, false);
   await refresh('/?change=review&doc=openspec%2Fchanges%2Freview%2Ftasks.md');
-  assert.equal(document.getElementById('review-comment-form'), null);
+  assert.ok(document.getElementById('review-comment-form'), 'Task documents support comments too');
   submit();
   await waitFor(() => form().dataset.blocked === 'true' && !form().hasAttribute('aria-busy'));
   const retry = await claimNext(root, 'Stability agent'); assert.notEqual(retry.feedbackId, claimed.feedbackId);
@@ -587,7 +587,7 @@ test('document controls save Proposal and Design feedback without HTMX or a prev
   const waitFor=async predicate=>{const deadline=Date.now()+4000;while(!predicate()){if(Date.now()>deadline)assert.fail(document.getElementById('review-feedback')?.textContent||'Document save did not finish');await new Promise(resolve=>setTimeout(resolve,10));}};
   const submit=()=>document.getElementById('review-comment-form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));
   const switchDoc=async(doc,view='rendered')=>{const next=parseHTML(await(await fetch(viewer.origin+route(doc,view))).text()).document.getElementById('workspace');document.getElementById('workspace').outerHTML=next.outerHTML;document.dispatchEvent(new window.Event('htmx:afterSwap'));};
-  assert.equal(document.querySelector('.file-toolbar [data-comment-file]'),null);
+  assert.equal(Boolean(document.querySelector('.file-toolbar [data-comment-file]')), false);
   assert.ok(document.querySelector('#document-discussion #review-comment-form'));
   assert.equal(document.getElementById('review-comment-form').dataset.sourceHash,documentHash('# Proposal\n\nExpected behavior.\n'));
   document.querySelector('[data-review-line="2"]').click();
@@ -623,7 +623,7 @@ test('document controls save Proposal and Design feedback without HTMX or a prev
   await put(root,design,'');
   await switchDoc(design,'source');
   assert.equal(document.querySelectorAll('.document-source [data-review-line]').length,0);
-  assert.equal(document.querySelector('.file-toolbar [data-comment-file]'),null);
+  assert.equal(Boolean(document.querySelector('.file-toolbar [data-comment-file]')), false);
   assert.ok(document.querySelector('#document-discussion #review-comment-form'));
 });
 
@@ -644,9 +644,9 @@ test('rendered Markdown opens one inline editor, saves inline and bottom discuss
   const input=body=>{const field=document.getElementById('review-comment-body');field.value=body;field.dispatchEvent(new window.Event('input',{bubbles:true}));};
   const submit=()=>document.getElementById('review-comment-form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));
   const refresh=async()=>{const next=parseHTML(await(await fetch(viewer.origin+route)).text()).document.getElementById('workspace');document.getElementById('workspace').outerHTML=next.outerHTML;document.dispatchEvent(new window.Event('htmx:afterSwap'));};
-  assert.equal(document.querySelector('.file-toolbar [data-comment-file]'),null);
+  assert.equal(Boolean(document.querySelector('.file-toolbar [data-comment-file]')), false);
   assert.ok(document.querySelector('#document-discussion [data-document-composer-home] #review-comment-form'));
-  assert.equal(document.querySelector('#review-details #review-comment-form'),null);
+  assert.equal(Boolean(document.querySelector('#review-details #review-comment-form')), false);
   assert.equal(document.querySelectorAll('#review-comment-form').length,1);
   assert.ok(document.getElementById('review-comment-composer').hasAttribute('open'));
   assert.equal(document.querySelector('#document-discussion h2').textContent,'Comments');
@@ -768,14 +768,14 @@ test('delete removes diff and panel copies without HTMX, prevents duplicates, an
   const context=vm.createContext({document,window,location:Object.freeze({search:'',pathname:'/',protocol:'http:',host:new URL(viewer.origin).host}),URLSearchParams,CustomEvent:window.CustomEvent,DOMParser:window.DOMParser,fetch:network,setTimeout,clearTimeout,requestAnimationFrame:callback=>callback()});vm.runInContext(await fs.readFile(new URL('../public/review.js',import.meta.url),'utf8'),context);
   const waitFor=async predicate=>{const deadline=Date.now()+4000;while(!predicate()){if(Date.now()>deadline)assert.fail('Comment deletion did not finish');await new Promise(resolve=>setTimeout(resolve,10));}};
   const submit=node=>{const event=new window.Event('submit',{bubbles:true,cancelable:true});node.dispatchEvent(event);assert.equal(event.defaultPrevented,true);};
-  assert.equal(document.querySelector('.feedback-export-list'),null);assert.doesNotMatch(document.body.textContent,/Saved feedback documents/);
+  assert.equal(Boolean(document.querySelector('.feedback-export-list')), false);assert.doesNotMatch(document.body.textContent,/Saved feedback documents/);
   document.querySelector('[data-review-side="proposed"][data-review-line="2"]').click();const body=document.getElementById('review-comment-body');body.value='Keep my in-progress review.';body.dispatchEvent(new window.Event('input',{bubbles:true}));
   const code=document.querySelector('.diff-code-scroll');code.scrollTop=111;code.scrollLeft=29;
   const inline=document.querySelector(`#inline-diff-comment-${first.id} [data-delete-comment]`),panel=document.querySelector(`#comment-${first.id} [data-delete-comment]`);
   assert.equal(inline.getAttribute('method'),'post');submit(inline);submit(panel);assert.equal(posts.length,1);
   assert.equal(inline.querySelector('button').disabled,true);assert.equal(panel.querySelector('button').disabled,true);release();
   await waitFor(()=>document.querySelectorAll('.review-comment').length===1&&document.querySelectorAll('.diff-comment').length===1);
-  assert.equal((await listComments(root,job.id)).length,1);assert.equal(document.getElementById(`inline-diff-comment-${first.id}`),null);
+  assert.equal((await listComments(root,job.id)).length,1);assert.equal(Boolean(document.getElementById(`inline-diff-comment-${first.id}`)), false);
   assert.equal(document.getElementById('review-comment-body').value,'Keep my in-progress review.');assert.equal(document.getElementById('review-comment-form').closest('[data-diff-thread]').dataset.diffLine,'2');
   assert.equal(document.querySelector('.diff-code-scroll').scrollTop,111);assert.equal(document.querySelector('.diff-code-scroll').scrollLeft,29);
   assert.equal((await feedbackExport(root,job.id,exported.id)).document,original);
@@ -792,7 +792,7 @@ test('delete removes diff and panel copies without HTMX, prevents duplicates, an
  });
 });
 
-test('document deletion updates inline, bottom and aggregate notes across review scopes and works without a composer',async t=>{
+test('document deletion updates inline, bottom and aggregate notes across document review scopes',async t=>{
  const {root,job}=await fixture(t);const scope=artifactReviewID('review');const proposal='openspec/changes/review/proposal.md',design='openspec/changes/review/design.md';
  const note=await addComment(root,scope,{file:proposal,side:'document',start:1,body:'Remove this planning note.',sourceHash:documentHash(await fs.readFile(path.join(root,proposal),'utf8'))});
  const other=await addComment(root,scope,{file:design,body:'Remove this from Tasks.',sourceHash:documentHash(await fs.readFile(path.join(root,design),'utf8'))});
@@ -809,11 +809,38 @@ test('document deletion updates inline, bottom and aggregate notes across review
  const body=document.getElementById('review-comment-body');body.value='Keep this planning draft.';body.dispatchEvent(new window.Event('input',{bubbles:true}));
  assert.equal(document.querySelector('#review-comments').dataset.preview,job.id);submit(document.querySelector(`#document-comment-${note.id} [data-delete-comment]`));
  await waitFor(()=>document.querySelectorAll('.review-comment').length===2&&document.querySelectorAll('#document-discussion .document-comment').length===0);
- assert.equal(document.getElementById(`inline-document-comment-${note.id}`),null);assert.equal(document.getElementById('review-comment-body').value,'Keep this planning draft.');
+ assert.equal(Boolean(document.getElementById(`inline-document-comment-${note.id}`)), false);assert.equal(document.getElementById('review-comment-body').value,'Keep this planning draft.');
  assert.equal((await listComments(root,scope)).length,1);assert.equal((await listComments(root,job.id)).length,1);
- await navigate('openspec/changes/review/tasks.md');assert.equal(document.getElementById('review-comment-form'),null);
+ await navigate('openspec/changes/review/tasks.md');assert.ok(document.getElementById('review-comment-form'));
  submit(document.querySelector(`#comment-${other.id} [data-delete-comment]`));
  await waitFor(()=>document.querySelectorAll('.review-comment').length===1);
  assert.deepEqual(await listComments(root,scope),[]);assert.equal((await listComments(root,job.id)).length,1);
  await navigate(proposal);assert.equal(document.getElementById('review-comment-body').value,'Keep this planning draft.');
+});
+
+test('the first Build comment creates the review panel and appears without reloading', async t => {
+  const { planningFixture, readyDocument } = await import('./helpers.mjs');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'spequi-first-note-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  await initProject(root);
+  await put(root, 'openspec/changes/plan/proposal.md', '# Proposal\n\n## Why\nClarify the behavior.\n');
+  await planningFixture(root, 'plan');
+  const viewer = await startServer({ root, port: 0, quiet: true }); t.after(() => viewer.close());
+  const { document, window } = parseHTML((await readyDocument(viewer.origin + '/?view=studio&change=plan&plan=proposal.md')).toString());
+  assert.equal(Boolean(document.getElementById('review-comments')), false);
+  window.HTMLElement.prototype.scrollIntoView = function () {};
+  const network = (url, options = {}) => fetch(new URL(url, viewer.origin), { ...options, headers: { ...options.headers, Origin: viewer.origin } });
+  vm.runInNewContext(await fs.readFile(new URL('../public/review.js', import.meta.url), 'utf8'), { document, window, location: { search: '' }, URLSearchParams, CustomEvent: window.CustomEvent, DOMParser: window.DOMParser, fetch: network, setTimeout, clearTimeout });
+  document.querySelector('[data-review-line="4"]').click();
+  const input = document.getElementById('review-comment-body');
+  input.value = 'Preserve existing preferences.';
+  input.dispatchEvent(new window.Event('input', { bubbles: true }));
+  document.getElementById('review-comment-form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+  const deadline = Date.now() + 4000;
+  while (!document.querySelector('#studio-review #review-comments')) {
+    if (Date.now() > deadline) assert.fail('Saved comment did not create the planning review panel');
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.match(document.querySelector('[data-document-content]').textContent, /Preserve existing preferences/);
+  assert.equal((await listComments(root, artifactReviewID('plan'))).length, 1);
 });

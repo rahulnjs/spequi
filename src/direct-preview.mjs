@@ -1,4 +1,4 @@
-import { writeJob } from './jobs.mjs';
+import { writeJob, registerLocalJob } from './jobs.mjs';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
@@ -136,9 +136,9 @@ export async function directPreview(root, { change, kind, patch, analysisId, fil
     const job = { id, action: 'preview', change, origin: kind, status: 'running', createdAt: now, updatedAt: now, message: '',
       validation: { status: 'not-run', message: 'No implementation checks were run. Review and test these proposed edits before applying.' },
       ...(analysis ? { analysisId: analysis.id, model: config.model } : {}), logs: [{ at: now, message: kind === 'model' ? 'Generating proposed edits using the selected model context.' : 'Staging an imported patch in an isolated copy.' }] };
-    const jobFile = await within(root, `.spequi/jobs/${id}.json`);
-    await writeJob(root, job);
+    const releaseWorker = registerLocalJob(job);
     try {
+      await writeJob(root, job);
       const work = await createPreview(root, id);
       let edits;
       if (kind === 'patch') edits = await patchEdits(work, patch);
@@ -164,6 +164,6 @@ export async function directPreview(root, { change, kind, patch, analysisId, fil
       job.logs.push({ at: job.updatedAt, message: error.message });
       await writeJob(root, job);
       throw error;
-    }
+    } finally { releaseWorker(); }
   });
 }

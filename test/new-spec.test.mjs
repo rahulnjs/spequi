@@ -8,6 +8,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import path from 'node:path';
 import {initProject} from '../src/project.mjs';
+import {saveDraft} from '../src/drafts.mjs';
 import {requestLifecycle} from '../src/lifecycle.mjs';
 import {claimNext,updateJob,getJob} from '../src/jobs.mjs';
 import {startServer} from '../src/server.mjs';
@@ -59,11 +60,12 @@ test('real creation screens retain their request and open generated documents af
  assert.equal(document.querySelector('[form=studio-create]').textContent.includes('Continue'),true);
  assert.equal(document.querySelector('.change-header'),null,'No unrelated change header before the idea form');
  const csrf=document.querySelector('meta[name=csrf-token]').content;
- const payload={action:'start-plan',change:'fresh-idea',message:'A genuinely new feature',planMode:'next'};
+ const draft=await saveDraft(root,{change:'fresh-idea',message:'A genuinely new feature'});
+ const payload={action:'start-plan',change:'fresh-idea',message:'A genuinely new feature',planMode:'next',draftId:draft.id};
  const post=(url,data,token=csrf)=>fetch(viewer.origin+url,{method:'POST',headers:{Origin:viewer.origin,'X-CSRF-Token':token,Accept:'application/json','Content-Type':'application/json'},body:JSON.stringify(data)});
  assert.equal((await post('/api/lifecycle/actions',payload,'bad')).status,403);
  const response=await post('/api/lifecycle/actions',payload);assert.equal(response.status,201);const created=await response.json();
- document=await get(created.url);assert.equal(document.querySelector('#workspace').dataset.change,'');assert.match(document.querySelector('.studio-creation-caption').textContent,/first ready artifact/);
+ document=await get(created.url);assert.equal(document.querySelector('#workspace').dataset.change,'');assert.match(document.querySelector('.studio-creation-caption').textContent,/plan is queued/);
  const owned=await claimNext(root,'This session');
  const question=await askJob(root,owned.id,owned.claimToken,{message:'Which policy should the new feature follow?',options:['First','Second']});
  document=await get(created.url);assert.ok(document.querySelector('[data-studio-question]'));assert.equal(document.querySelector('#studio-composer'),null);assert.match(document.querySelector('.studio-thread').textContent,/Which policy/);
@@ -73,10 +75,10 @@ test('real creation screens retain their request and open generated documents af
  await updateJob(root,owned.id,owned.claimToken,'finish','Proposal generated');
  document=await get(created.url);
  assert.equal(document.querySelector('#workspace').dataset.change,'fresh-idea');assert.equal(document.querySelector('#workspace').dataset.creationComplete,'true');
- assert.match(document.querySelector('.studio-document').textContent,/Fresh generated proposal/);
+ assert.match(document.querySelector('.reader').textContent,/Fresh generated proposal/);
  assert.match(document.querySelector('[data-refresh-url]').dataset.refreshUrl,/created=1/);
  assert.equal(document.querySelector('[name=action][value=plan-next]').parentElement.querySelector('button').disabled,false);
- assert.ok(document.querySelector('.studio-artifact-tab[aria-current=page]'));
+ assert.ok(document.querySelector('.document-tab[aria-current=page]'));
  assert.equal(document.querySelector('#studio-document-picker'),null);assert.equal(document.querySelector('.studio-version'),null);assert.equal(document.querySelector('.studio-compare'),null);
  assert.equal((await post('/api/lifecycle/command',{command:'/status',change:'fresh-idea'},'bad')).status,403);
  const status=await post('/api/lifecycle/command',{command:'/status',change:'fresh-idea'});assert.equal(status.status,200);assert.match((await status.json()).summary,/OpenSpec status/);
@@ -86,7 +88,7 @@ test('real creation screens retain their request and open generated documents af
 });
 
 test('picker and slash commands share guarded lifecycle operations without a shell',async t=>{
- const {requestCommand,parseCommand,renderCommandPicker}=await import('../src/commands.mjs');
+ const {requestCommand,parseCommand}=await import('../src/commands.mjs');
  const root=await fixture(t);await put(root,'openspec/changes/flow/proposal.md','# Proposal\n');
  const getReadiness=async()=>({schema:'custom',artifacts:[{id:'brief',status:'ready'}],artifactPaths:{},planningComplete:false,nextArtifact:'brief',tasks:{done:0,total:2},applyState:'blocked'});
  const options={getReadiness};
@@ -99,7 +101,7 @@ test('picker and slash commands share guarded lifecycle operations without a she
  const queued=await requestCommand(root,{command:'/opsx:continue',change:'flow'},options);assert.equal(queued.job.action,'plan-next');
  await assert.rejects(requestCommand(root,{command:'/explore question',change:'flow'},options),/current workflow/);
  assert.match((await requestCommand(root,{command:'/status',change:'flow'},options)).summary,/OpenSpec status/);
- const {lifecycleState}=await import('../src/lifecycle.mjs');const state=await lifecycleState(root,'flow',options);const html=renderCommandPicker(state);assert.match(html,/Waiting for agent/);assert.match(html,/View request/);assert.doesNotMatch(html,/data-lifecycle-form|data-studio-insert-command/);
+ const {lifecycleState}=await import('../src/lifecycle.mjs');const state=await lifecycleState(root,'flow',options);assert.equal(state.pending.id,queued.job.id);assert.equal(state.actions.preview.enabled,false);
  await updateJob(root,queued.job.id,null,'cancel','End test');
 });
 
@@ -142,7 +144,7 @@ test('session reporting CLI and header preserve honest status and escape MCP nam
  document.querySelector('[data-session-close]').click();assert.equal(document.querySelector('#agent-connections').hidden,true);assert.equal(active,'agent');
  const event=new window.Event('agent-status');event.detail={status:'unresponsive',connected:false,at:Date.now()-50000,mcps:{supported:true,stale:true,connectedCount:null,connections:[{name:'Local files',status:'connected'}]}};document.dispatchEvent(event);
  assert.equal(document.querySelector('#mcp-count').textContent,'MCPs');assert.match(document.querySelector('#session-mcps').textContent,/Last: Connected/);assert.equal(document.querySelector('.mcp-service-state').dataset.state,'unknown');
- assert.match(document.querySelector('#agent-indicator').textContent,/No recent update/);assert.match(document.querySelector('#agent-indicator').getAttribute('title'),/No recent update/);assert.match(document.querySelector('#agent-indicator').getAttribute('aria-description'),/same coding session/);assert.equal(document.querySelector('#session-recovery').hidden,false);
+ assert.equal(document.querySelector('#agent-indicator').textContent,'No recent update');assert.match(document.querySelector('#agent-indicator').getAttribute('title'),/CLI|request|update/i);assert.match(document.querySelector('#agent-indicator').getAttribute('aria-description'),/Check your CLI/);assert.equal(document.querySelector('#session-recovery').hidden,false);
  document.querySelector('[data-session-refresh]').click();await new Promise(r=>setTimeout(r,0));assert.equal(document.querySelector('#session-recovery').hidden,true);
  const zero=new window.Event('agent-status');zero.detail={status:'live',connected:true,mcps:{supported:true,stale:false,connectedCount:0,connections:[]}};document.dispatchEvent(zero);assert.equal(document.querySelector('#mcp-count').textContent,'0 MCPs');
  const working=new window.Event('agent-status');working.detail={status:'working',connected:true,agent:'GigaCode CLI',mcps:{supported:false,stale:false,connections:[],connectedCount:null}};document.dispatchEvent(working);assert.equal(document.querySelector('#agent-indicator').textContent,'GigaCode CLI · Working');

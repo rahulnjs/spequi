@@ -13,3 +13,10 @@ export async function readyDocument(url) {
     await delay(40);
   }
 }
+
+export async function planningFixture(root, change) {
+  const { saveDraft } = await import('../src/drafts.mjs');
+  const { writeJSON, runtime } = await import('../src/files.mjs');
+  const draft = await saveDraft(root, { change, message: 'Planning fixture' });
+  await writeJSON(runtime(root, 'drafts', `${draft.id}.json`), { ...draft, creationId: `fixture-${draft.id}` });
+}
